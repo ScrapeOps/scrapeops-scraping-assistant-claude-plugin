@@ -25,19 +25,25 @@ Before installing, make sure you have:
 
 ## Installation
 
-### Step 1 — Install the plugin
+### Step 1 — Add the ScrapeOps marketplace
 
 Open Claude Code and run:
 
 ```
-/plugin install scrapeops/scrapeops-scraper-assistant-claude-plugin
+/plugin marketplace add ScrapeOps/scrapeops-scraping-assistant-claude-plugin
 ```
 
-Claude will download and install the plugin. This only needs to be done once.
+This registers the ScrapeOps plugin catalog with Claude Code. Only needs to be done once.
 
-### Step 2 — Add your API key
+### Step 2 — Install the plugin
 
-After the plugin is installed, run:
+```
+/plugin install scrapeops@scrapeops
+```
+
+Claude will download and install the plugin.
+
+### Step 3 — Add your API key
 
 ```
 /scrapeops-setup
@@ -45,7 +51,7 @@ After the plugin is installed, run:
 
 Claude will ask for your ScrapeOps API key. Paste it in and confirm. Your key is saved locally in `~/.claude/settings.json` and never leaves your machine.
 
-### Step 3 — Restart Claude Code
+### Step 4 — Restart Claude Code
 
 Close and reopen Claude Code. The plugin is now active.
 
