@@ -43,17 +43,17 @@ This registers the ScrapeOps plugin catalog with Claude Code.
 
 Claude will download and install the plugin.
 
-### Step 3 — Add your API key
+### Step 3 — Restart Claude Code
+
+Close and reopen Claude Code to activate the plugin.
+
+### Step 4 — Add your API key
 
 ```
 /scrapeops-setup
 ```
 
 Claude will ask for your ScrapeOps API key. Paste it in and confirm. Your key is saved locally in `~/.claude/settings.json` and never leaves your machine.
-
-### Step 4 — Restart Claude Code
-
-Close and reopen Claude Code. The plugin is now active.
 
 ---
 
