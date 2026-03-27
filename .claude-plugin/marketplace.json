@@ -1,0 +1,13 @@
+{
+  "name": "scrapeops",
+  "plugins": [
+    {
+      "name": "scrapeops",
+      "source": "./"
+    }
+  ],
+  "owner": {
+    "name": "ScrapeOps",
+    "email": "support@scrapeops.io"
+  }
+}
