@@ -33,7 +33,7 @@ Open Claude Code and run:
 /plugin marketplace add ScrapeOps/scrapeops-scraping-assistant-claude-plugin
 ```
 
-This registers the ScrapeOps plugin catalog with Claude Code. Only needs to be done once.
+This registers the ScrapeOps plugin catalog with Claude Code.
 
 ### Step 2 — Install the plugin
 
