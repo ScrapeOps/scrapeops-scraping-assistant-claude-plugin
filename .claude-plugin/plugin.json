@@ -1,12 +1,12 @@
 {
-  "name": "scrapeops",
+  "name": "scrapeops-scraping-assistant-claude-plugin",
   "version": "1.0.0",
   "description": "ScrapeOps AI Scraper Builder — generate and fix production-ready scrapers for any website using AI",
   "author": {
     "name": "ScrapeOps",
     "email": "support@scrapeops.io"
   },
-  "repository": "https://github.com/scrapeops/scrapeops-scraper-assistant-claude-plugin",
+  "repository": "https://github.com/scrapeops/scrapeops-scraping-assistant-claude-plugin",
   "mcpServers": {
     "scrapeops": {
       "command": "node",

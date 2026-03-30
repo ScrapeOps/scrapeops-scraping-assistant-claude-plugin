@@ -38,7 +38,7 @@ This registers the ScrapeOps plugin catalog with Claude Code.
 ### Step 2 — Install the plugin
 
 ```
-/plugin install scrapeops@scrapeops
+/plugin install scrapeops@scrapeops-scraping-assistant-claude-plugin
 ```
 
 Claude will download and install the plugin.

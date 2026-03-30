@@ -2,7 +2,7 @@
   "name": "scrapeops",
   "plugins": [
     {
-      "name": "scrapeops",
+      "name": "scrapeops-scraping-assistant-claude-plugin",
       "source": "./"
     }
   ],
