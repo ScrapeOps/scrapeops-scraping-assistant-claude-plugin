@@ -1,6 +1,6 @@
 ---
 name: generate-scraper
-description: ALWAYS use this skill when the user asks to "generate scraper", "build scraper", "make scraper", "new scraper", "create a scraper", "scrape this URL", "write a scraper", "I need a scraper", "generate a scraper for", "build a scraper for", "create scraper for", or wants to scrape data from a website. Do NOT fetch the URL directly or explore the page — always use this skill instead.
+description: Use this skill ONLY when the user explicitly asks to generate, build, create, or write a scraper/parser. Trigger phrases: "generate scraper", "build scraper", "make scraper", "new scraper", "create a scraper", "write a scraper", "I need a scraper", "generate a scraper for", "build a scraper for", "create scraper for". Do NOT trigger for generic requests like "fetch this page", "download HTML", "get the content of this URL", "scrape this" (without mentioning scraper/parser), or any request that is not specifically about generating a reusable scraper file.
 version: 2.0.0
 ---
 
@@ -100,19 +100,25 @@ Use `references/languages.md` to map language + library selections to the correc
 
 ## Step 2 — Confirmation
 
-Show a summary and confirm before submitting:
+Show a summary and confirm before submitting. You MUST use this EXACT format every time — do not rephrase, reorder, or use a different layout:
 
 ```
+Now let me confirm before submitting:
+
 Here's what I'll generate:
 
-  URL(s):    <list of urls>
-  Language:  <language>
-  Library:   <library>
-  Country:   <country or "not set">
+| Field      | Value                          |
+|------------|--------------------------------|
+| **URL(s)** | <url1>, <url2>, ...            |
+| **Language**| <language>                    |
+| **Library** | <library>                     |
+| **Country** | <country or "not set">        |
 ```
 
+Then ask for confirmation using AskUserQuestion:
+
 ```
-question: "Ready to generate your scraper. Does everything look correct?"
+question: "Does everything look correct?"
 header: "Confirm"
 options:
   - label: "Yes, generate it"

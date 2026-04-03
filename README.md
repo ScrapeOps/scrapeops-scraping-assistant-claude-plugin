@@ -25,29 +25,28 @@ Before installing, make sure you have:
 
 ## Installation
 
-### Step 1 — Add the ScrapeOps marketplace
+### Step 1 — Clone the repository
 
-Open Claude Code and run:
-
-```
-/plugin marketplace add ScrapeOps/scrapeops-scraping-assistant-claude-plugin
-```
-
-This registers the ScrapeOps plugin catalog with Claude Code.
-
-### Step 2 — Install the plugin
-
-```
-/plugin install scrapeops@scrapeops-scraping-assistant-claude-plugin
+```bash
+git clone https://github.com/ScrapeOps/scrapeops-scraping-assistant-claude-plugin.git
+cd scrapeops-scraping-assistant-claude-plugin
 ```
 
-Claude will download and install the plugin.
+### Step 2 — Run the setup script
+
+```bash
+./setup.sh
+```
+
+This installs the skills, agents, and MCP server into your Claude Code configuration.
 
 ### Step 3 — Restart Claude Code
 
-Close and reopen Claude Code to activate the plugin.
+Close and reopen Claude Code to activate everything.
 
 ### Step 4 — Add your API key
+
+Open Claude Code and run:
 
 ```
 /scrapeops-setup
@@ -120,6 +119,19 @@ Claude can also fetch a live page if you don't have an HTML file locally — jus
 - **JS-rendered pages:** Choose Playwright or Selenium/Puppeteer if the page loads content via JavaScript (React, Vue, Angular apps). Use BeautifulSoup/Cheerio for static HTML.
 - **Fix vs regenerate:** Use `/fix-scraper` when a specific field is wrong or empty. Use `/generate-scraper` again if the page layout changed significantly.
 - **Check your key:** Run `/scrapeops-setup` at any time to see your current configuration or update your API key.
+
+---
+
+## Uninstall
+
+To remove ScrapeOps from Claude Code:
+
+```bash
+cd scrapeops-scraping-assistant-claude-plugin
+./setup.sh --uninstall
+```
+
+This removes the skills, agents, and MCP server registration. Your API key in `~/.claude/settings.json` is not removed.
 
 ---
 
