@@ -10,7 +10,7 @@
     {
       "name": "scrapeops-scraping-assistant-claude-plugin",
       "description": "ScrapeOps AI Scraper Builder — generate and fix production-ready scrapers for any website using AI",
-      "source": "."
+      "source": "./"
     }
   ]
 }
