@@ -1,13 +1,16 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "scrapeops",
-  "plugins": [
-    {
-      "name": "scrapeops-scraping-assistant-claude-plugin",
-      "source": "./"
-    }
-  ],
+  "description": "ScrapeOps AI Scraper Builder — generate and fix production-ready scrapers for any website using AI",
   "owner": {
     "name": "ScrapeOps",
     "email": "support@scrapeops.io"
-  }
+  },
+  "plugins": [
+    {
+      "name": "scrapeops-scraping-assistant-claude-plugin",
+      "description": "ScrapeOps AI Scraper Builder — generate and fix production-ready scrapers for any website using AI",
+      "source": "."
+    }
+  ]
 }
