@@ -13,14 +13,14 @@ Configures the ScrapeOps plugin by saving the API key to `~/.claude/settings.jso
 
 ## Step 1 — Check current configuration
 
-Check if `$SCRAPEOPS_API_KEY` is already set in the environment.
+Read `~/.claude/settings.json` with the Read tool and check if `env.SCRAPEOPS_API_KEY` exists.
 
 **If already configured**, show:
 ```
 ScrapeOps is already configured.
 
   API Key: <first 8 chars>••••••••
-  Backend: https://parser.scrapeops.io (default)
+  Backend: <SCRAPEOPS_API_URL value or "https://parser.scrapeops.io (default)">
 
 To update the key, run: /scrapeops-setup <new_api_key>
 ```
@@ -75,9 +75,7 @@ Show:
   API Key: <first 8 chars>••••••••
   Backend: https://parser.scrapeops.io (default)
 
-⚠ Restart Claude Code for the changes to take effect.
-
-You can then use /generate-scraper and /fix-scraper.
+You can now use /generate-scraper and /fix-scraper.
 ```
 
 ---

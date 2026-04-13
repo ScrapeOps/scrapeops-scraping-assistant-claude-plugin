@@ -10,27 +10,15 @@ This skill generates production-ready web scrapers using the ScrapeOps AI backen
 
 ## Overview
 
-1. Check configuration (API key + backend URL)
-2. Collect inputs (URLs, language, library)
-3. Submit job via `scrapeops_submit_job` MCP tool
-4. Poll until complete via `scrapeops_poll_status` MCP tool
-5. Download code if needed and save the file
+1. Collect inputs (URLs, language, library)
+2. Submit job via `scrapeops_submit_job` MCP tool
+3. Poll until complete via `scrapeops_poll_status` MCP tool
+4. Download code if needed and save the file
 
----
-
-## Step 0 — Configuration Check
-
-**`SCRAPEOPS_API_KEY`** (required):
-
-Check if `$SCRAPEOPS_API_KEY` is set in the environment (the MCP server reads it directly — you never need to pass its value to any tool).
-
-If not set, stop and show:
-```
-ScrapeOps API key is not configured.
-Run /scrapeops-setup to configure it.
-```
-
-The MCP server automatically reads `SCRAPEOPS_API_KEY` and `SCRAPEOPS_API_URL` from the environment. Never pass these values as tool arguments.
+> **API key handling:** The MCP server reads `SCRAPEOPS_API_KEY` from `~/.claude/settings.json` automatically. Do NOT check or validate it before making tool calls. If a MCP tool call fails with "SCRAPEOPS_API_KEY is not configured", handle it inline:
+> 1. Ask the user: "Enter your ScrapeOps API key (find it at https://scrapeops.io/app/dashboard):"
+> 2. Read `~/.claude/settings.json`, add the key to `env.SCRAPEOPS_API_KEY` using Edit, and retry the failed tool call
+> 3. Do NOT tell the user to run `/scrapeops-setup` or restart — just ask, save, and continue
 
 ---
 

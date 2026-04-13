@@ -35,8 +35,15 @@ if [ "$1" = "--uninstall" ]; then
 
   claude mcp remove --scope user scrapeops 2>/dev/null && echo "  Removed MCP server: scrapeops" || true
 
+  # Remove plugin cache if it exists
+  if [ -d "$CLAUDE_DIR/plugins/cache/scrapeops" ]; then
+    rm -rf "$CLAUDE_DIR/plugins/cache/scrapeops"
+    echo "  Removed plugin cache"
+  fi
+
   echo ""
   echo "  Uninstall complete. Restart Claude Code to apply."
+  echo "  Note: Your API key in ~/.claude/settings.json was not removed."
   echo ""
   exit 0
 fi
@@ -98,6 +105,6 @@ echo "  Setup complete!"
 echo ""
 echo "  Next steps:"
 echo "    1. Restart Claude Code"
-echo "    2. Run /scrapeops-setup to add your API key"
-echo "    3. Try /generate-scraper to build your first scraper"
+echo "    2. Try /generate-scraper to build your first scraper"
+echo "       (Claude will ask for your API key on first use)"
 echo ""
