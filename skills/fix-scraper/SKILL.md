@@ -256,11 +256,10 @@ The fix loop runs on the ScrapeOps server via the Agent Service. The local plugi
 
 1. Read the parser file content using the Read tool
 
-2. **If local HTML files exist:** For each HTML file, encode to base64:
-   ```bash
-   base64 -i page.html | tr -d '\n'
+2. **If local HTML files exist:** Pass the file paths directly in `html_paths` — the MCP server reads them from disk internally. **Do NOT run `base64` or load HTML content into your context** (it wastes tokens and often exceeds payload limits).
    ```
-   Build the `html_files` array: `[{ filename: "page.html", content_base64: "<base64>" }]`
+   html_paths: ["./page.html", "./page_2.html"]
+   ```
 
 3. **If URLs need to be fetched (no local HTML):** Build the `fetch_urls` array with the URLs. The server will fetch the HTML pages via ScrapeOps proxy.
 
@@ -281,12 +280,12 @@ Call `scrapeops_start_fix` with:
 - `language` — the programming language
 - `task` — what needs to be fixed
 - `job_id` — **(only for follow-ups)** the job_id from `.scrapeops-fix-session.json`
-- `html_files` — array of `{ filename, content_base64 }` **(only if new session with local HTML)**
+- `html_paths` — array of local file paths, e.g. `["./page.html"]` **(preferred, new sessions with local HTML)**
 - `fetch_urls` — array of URLs to fetch server-side **(only if new session without local HTML)**
 
-**For follow-ups:** send `parser_code`, `parser_filename`, `language`, `task`, and `job_id`. The server already has the HTMLs from before. If the user provides **additional** HTML files or URLs (e.g. "also test against this page"), include them in `html_files` or `fetch_urls` — the server will add them to the existing workspace without removing previous HTMLs.
+**For follow-ups:** send `parser_code`, `parser_filename`, `language`, `task`, and `job_id`. The server already has the HTMLs from before. If the user provides **additional** HTML files or URLs (e.g. "also test against this page"), include them in `html_paths` or `fetch_urls` — the server will add them to the existing workspace without removing previous HTMLs.
 
-**For new sessions:** send `html_files` or `fetch_urls` (one or the other, not both).
+**For new sessions:** send `html_paths` or `fetch_urls` (one or the other, not both).
 
 Response has `job_id`. If missing or error, show the error and fall back to local parser-fixer agent.
 
@@ -411,5 +410,5 @@ If the user asks to fix something that was already partially fixed (e.g. "the pr
 
 - **Never load large HTML files fully into context** — write once, then use Grep and Read with offset+limit
 - **The fix loop runs server-side** on the ScrapeOps Agent Service — falls back to local parser-fixer agent if unavailable
-- The MCP server reads `SCRAPEOPS_API_KEY` and `SCRAPEOPS_AGENT_SERVICE_URL` from environment automatically
+- The MCP server reads `SCRAPEOPS_API_KEY` and `SCRAPEOPS_API_URL` from environment automatically
 - HTML files are sent base64-encoded to the server — use Bash `base64` command to encode them

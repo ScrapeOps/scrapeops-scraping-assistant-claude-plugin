@@ -102,11 +102,6 @@ function getApiUrl() {
   return url.replace(/\/$/, "");
 }
 
-function getAgentServiceUrl() {
-  const url = process.env.SCRAPEOPS_AGENT_SERVICE_URL || readSettingsEnv("SCRAPEOPS_AGENT_SERVICE_URL") || "https://agent.scrapeops.io";
-  return url.replace(/\/$/, "");
-}
-
 // ─── Tool implementations ─────────────────────────────────────────────────────
 
 async function submitJob({ urls, target_language, target_library }) {
@@ -195,40 +190,69 @@ async function fetchHtmlBatch({ urls, output_dir = "." }) {
   return settled;
 }
 
-// ─── Fix tools (talk to Agent Service) ───────────────────────────────────────
+// ─── Fix tools (talk to Go backend, which proxies to Agent Service) ──────────
 
-async function startFix({ parser_code, parser_filename, language, task, html_files, fetch_urls, job_id }) {
+async function startFix({ parser_code, parser_filename, language, task, html_files, html_paths, fetch_urls, job_id }) {
   const api_key = getApiKey();
-  const agent_url = getAgentServiceUrl();
+  const api_url = getApiUrl();
+
+  // Build html_files array — prefer html_paths (MCP reads from disk directly), fall back to html_files (pre-encoded)
+  const files = [];
+  if (Array.isArray(html_paths) && html_paths.length) {
+    const { basename } = await import("path");
+    for (const p of html_paths) {
+      try {
+        const content = readFileSync(p);
+        files.push({
+          filename: basename(p),
+          content_base64: content.toString("base64"),
+        });
+      } catch (err) {
+        throw new Error(`Failed to read HTML file '${p}': ${err.message}`);
+      }
+    }
+  }
+  if (Array.isArray(html_files) && html_files.length) {
+    files.push(...html_files);
+  }
+
   const payload = {
     api_key,
     parser_code,
     parser_filename,
     language,
     task,
-    html_files: html_files || [],
+    html_files: files,
     fetch_urls: fetch_urls || [],
   };
   if (job_id) payload.job_id = job_id;
   const body = JSON.stringify(payload);
   return requestLargeBody(
-    `${agent_url}/start-fix`,
+    `${api_url}/scraping-assistant/fix-session/start?api_key=${api_key}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body }
   );
 }
 
 async function pollFixStatus({ job_id }) {
-  const agent_url = getAgentServiceUrl();
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
   await sleep(20_000);
-  const d = await request(`${agent_url}/fix/${job_id}/status`);
+  const d = await request(`${api_url}/scraping-assistant/fix-session/${job_id}/status?api_key=${api_key}`);
   const progress = d.last_progress_message ? ` — ${d.last_progress_message}` : "";
-  d._summary = `Status: ${d.status}${d.error ? " — " + d.error : progress}`;
-  return d;
+  // Return a lean response so Claude's display focuses on status + progress
+  return {
+    _summary: `Status: ${d.status}${d.error ? " — " + d.error : progress}`,
+    status: d.status,
+    progress: d.last_progress_message || null,
+    error: d.error || null,
+    iterations: d.iterations || 0,
+  };
 }
 
 async function getFixResult({ job_id }) {
-  const agent_url = getAgentServiceUrl();
-  return request(`${agent_url}/fix/${job_id}/result`);
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  return request(`${api_url}/scraping-assistant/fix-session/${job_id}/result?api_key=${api_key}`);
 }
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
@@ -300,7 +324,7 @@ const TOOLS = [
   {
     name: "scrapeops_start_fix",
     description:
-      "Submit a parser fix job to the ScrapeOps agent service. Sends parser code and HTML files for server-side fixing. Returns job_id for polling. For follow-up fixes, pass the same job_id to reuse the existing workspace (HTMLs already fetched).",
+      "Submit a parser fix job to the ScrapeOps agent service. Sends parser code and HTML files for server-side fixing. Returns job_id for polling. For follow-up fixes, pass the same job_id to reuse the existing workspace (HTMLs already fetched). PREFER html_paths over html_files — it avoids base64 encoding in Claude's context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -308,7 +332,8 @@ const TOOLS = [
         parser_filename: { type: "string", description: "Parser filename (e.g. scraper.py)" },
         language:        { type: "string", description: "Programming language (python, javascript, etc.)" },
         task:            { type: "string", description: "What needs to be fixed" },
-        html_files:      { type: "array", items: { type: "object", properties: { filename: { type: "string" }, content_base64: { type: "string" } } }, description: "HTML files as base64-encoded content" },
+        html_paths:      { type: "array", items: { type: "string" }, description: "PREFERRED: Absolute or relative paths to local HTML files. MCP server reads them directly from disk — no base64 encoding needed." },
+        html_files:      { type: "array", items: { type: "object", properties: { filename: { type: "string" }, content_base64: { type: "string" } } }, description: "Legacy: HTML files as base64-encoded content. Use html_paths instead when possible." },
         fetch_urls:      { type: "array", items: { type: "string" }, description: "URLs to fetch server-side if no local HTML" },
         job_id:          { type: "string", description: "Previous job_id for follow-up fixes (reuses existing workspace with HTMLs)" },
       },
