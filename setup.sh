@@ -35,6 +35,11 @@ if [ "$1" = "--uninstall" ]; then
 
   claude mcp remove --scope user scrapeops 2>/dev/null && echo "  Removed MCP server: scrapeops" || true
 
+  # Kill any running MCP server processes for this plugin
+  if pkill -f "$REPO_DIR/mcp-server/index.js" 2>/dev/null; then
+    echo "  Stopped running MCP server processes"
+  fi
+
   # Remove plugin cache if it exists
   if [ -d "$CLAUDE_DIR/plugins/cache/scrapeops" ]; then
     rm -rf "$CLAUDE_DIR/plugins/cache/scrapeops"
