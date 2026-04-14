@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { createInterface } from "readline";
 import { setTimeout as sleep } from "timers/promises";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import https from "https";
 import http from "http";
 
@@ -48,16 +51,60 @@ function request(url, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
+function requestLargeBody(url, { method = "POST", headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === "https:" ? https : http;
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: { ...headers, "Content-Length": Buffer.byteLength(body || "") },
+    };
+    const req = mod.request(options, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString()));
+        } catch (e) {
+          reject(new Error(`JSON parse error: ${e.message}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
 // ─── Config from environment ──────────────────────────────────────────────────
 
+function readSettingsEnv(key) {
+  try {
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    return settings?.env?.[key] || "";
+  } catch {
+    return "";
+  }
+}
+
 function getApiKey() {
-  const key = process.env.SCRAPEOPS_API_KEY;
-  if (!key) throw new Error("SCRAPEOPS_API_KEY environment variable is not set. Run /scrapeops-setup to configure it.");
+  const key = process.env.SCRAPEOPS_API_KEY || readSettingsEnv("SCRAPEOPS_API_KEY");
+  if (!key) throw new Error("SCRAPEOPS_API_KEY is not configured. Run /scrapeops-setup to configure it.");
   return key;
 }
 
 function getApiUrl() {
-  return (process.env.SCRAPEOPS_API_URL || "https://parser.scrapeops.io").replace(/\/$/, "");
+  const url = process.env.SCRAPEOPS_API_URL || readSettingsEnv("SCRAPEOPS_API_URL") || "https://parser.scrapeops.io";
+  return url.replace(/\/$/, "");
+}
+
+function getAgentServiceUrl() {
+  const url = process.env.SCRAPEOPS_AGENT_SERVICE_URL || readSettingsEnv("SCRAPEOPS_AGENT_SERVICE_URL") || "https://agent.scrapeops.io";
+  return url.replace(/\/$/, "");
 }
 
 // ─── Tool implementations ─────────────────────────────────────────────────────
@@ -118,6 +165,72 @@ async function fetchHtml({ url }) {
   return { _raw: response.html };
 }
 
+async function fetchHtmlBatch({ urls, output_dir = "." }) {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  const suffixes = ["", "_b", "_c", "_d", "_e", "_f", "_g", "_h", "_i", "_j"];
+  const results = [];
+
+  // Fetch all URLs in parallel
+  const promises = urls.slice(0, 10).map(async (url, i) => {
+    try {
+      const body = JSON.stringify({ url });
+      const response = await request(
+        `${api_url}/scraping-assistant/http-fetch?api_key=${api_key}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body }
+      );
+      if (response.status === "success" && response.html) {
+        const filename = `${output_dir}/fetched_page${suffixes[i]}.html`;
+        const { writeFileSync } = await import("fs");
+        writeFileSync(filename, response.html, "utf-8");
+        return { url, filename, status: "ok", size: response.html.length };
+      }
+      return { url, filename: null, status: "error", error: response.error || "no html returned" };
+    } catch (err) {
+      return { url, filename: null, status: "error", error: err.message };
+    }
+  });
+
+  const settled = await Promise.all(promises);
+  return settled;
+}
+
+// ─── Fix tools (talk to Agent Service) ───────────────────────────────────────
+
+async function startFix({ parser_code, parser_filename, language, task, html_files, fetch_urls, job_id }) {
+  const api_key = getApiKey();
+  const agent_url = getAgentServiceUrl();
+  const payload = {
+    api_key,
+    parser_code,
+    parser_filename,
+    language,
+    task,
+    html_files: html_files || [],
+    fetch_urls: fetch_urls || [],
+  };
+  if (job_id) payload.job_id = job_id;
+  const body = JSON.stringify(payload);
+  return requestLargeBody(
+    `${agent_url}/start-fix`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body }
+  );
+}
+
+async function pollFixStatus({ job_id }) {
+  const agent_url = getAgentServiceUrl();
+  await sleep(20_000);
+  const d = await request(`${agent_url}/fix/${job_id}/status`);
+  const progress = d.last_progress_message ? ` — ${d.last_progress_message}` : "";
+  d._summary = `Status: ${d.status}${d.error ? " — " + d.error : progress}`;
+  return d;
+}
+
+async function getFixResult({ job_id }) {
+  const agent_url = getAgentServiceUrl();
+  return request(`${agent_url}/fix/${job_id}/result`);
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -171,13 +284,72 @@ const TOOLS = [
       required: ["url"],
     },
   },
+  {
+    name: "scrapeops_fetch_html_batch",
+    description:
+      "Fetch HTML from multiple URLs in parallel via ScrapeOps proxy. Saves each page as fetched_page.html, fetched_page_b.html, etc. in the output directory. Use this when fixing a scraper that runs against multiple pages — pass up to 5 URLs at once.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        urls:       { type: "array", items: { type: "string" }, description: "List of URLs to fetch (up to 10)" },
+        output_dir: { type: "string", description: "Directory to save HTML files (default: current directory)" },
+      },
+      required: ["urls"],
+    },
+  },
+  {
+    name: "scrapeops_start_fix",
+    description:
+      "Submit a parser fix job to the ScrapeOps agent service. Sends parser code and HTML files for server-side fixing. Returns job_id for polling. For follow-up fixes, pass the same job_id to reuse the existing workspace (HTMLs already fetched).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        parser_code:     { type: "string", description: "Parser source code" },
+        parser_filename: { type: "string", description: "Parser filename (e.g. scraper.py)" },
+        language:        { type: "string", description: "Programming language (python, javascript, etc.)" },
+        task:            { type: "string", description: "What needs to be fixed" },
+        html_files:      { type: "array", items: { type: "object", properties: { filename: { type: "string" }, content_base64: { type: "string" } } }, description: "HTML files as base64-encoded content" },
+        fetch_urls:      { type: "array", items: { type: "string" }, description: "URLs to fetch server-side if no local HTML" },
+        job_id:          { type: "string", description: "Previous job_id for follow-up fixes (reuses existing workspace with HTMLs)" },
+      },
+      required: ["parser_code", "parser_filename", "language", "task"],
+    },
+  },
+  {
+    name: "scrapeops_poll_fix_status",
+    description:
+      "Wait 20 seconds then check fix job status. Call repeatedly until status is 'completed' or 'failed'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Job ID returned by scrapeops_start_fix" },
+      },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "scrapeops_get_fix_result",
+    description:
+      "Get the result of a completed fix job, including the fixed parser code and changes summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Job ID" },
+      },
+      required: ["job_id"],
+    },
+  },
 ];
 
 const HANDLERS = {
-  scrapeops_submit_job:    submitJob,
-  scrapeops_poll_status:   pollStatus,
-  scrapeops_download_code: downloadCode,
-  scrapeops_fetch_html:    fetchHtml,
+  scrapeops_submit_job:        submitJob,
+  scrapeops_poll_status:       pollStatus,
+  scrapeops_download_code:     downloadCode,
+  scrapeops_fetch_html:        fetchHtml,
+  scrapeops_fetch_html_batch:  fetchHtmlBatch,
+  scrapeops_start_fix:         startFix,
+  scrapeops_poll_fix_status:   pollFixStatus,
+  scrapeops_get_fix_result:    getFixResult,
 };
 
 // ─── MCP method handlers ──────────────────────────────────────────────────────

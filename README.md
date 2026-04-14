@@ -44,15 +44,11 @@ This installs the skills, agents, and MCP server into your Claude Code configura
 
 Close and reopen Claude Code to activate everything.
 
-### Step 4 — Add your API key
+### Step 4 — Start using
 
-Open Claude Code and run:
+Open Claude Code and run `/generate-scraper` or `/fix-scraper`. If your API key isn't configured yet, Claude will ask for it automatically on the first run — no extra setup step needed. Your key is saved locally in `~/.claude/settings.json` and never leaves your machine.
 
-```
-/scrapeops-setup
-```
-
-Claude will ask for your ScrapeOps API key. Paste it in and confirm. Your key is saved locally in `~/.claude/settings.json` and never leaves your machine.
+You can also configure or update your key at any time with `/scrapeops-setup`.
 
 ---
 
@@ -138,7 +134,7 @@ This removes the skills, agents, and MCP server registration. Your API key in `~
 ## Troubleshooting
 
 **"ScrapeOps API key is not configured"**
-Run `/scrapeops-setup` and paste your key. Then restart Claude Code.
+Claude will ask for your key automatically. Just paste it when prompted. You can also run `/scrapeops-setup` manually.
 
 **"The API key you sent is invalid"**
 Your key may have been copied incorrectly. Run `/scrapeops-setup <your-api-key>` to reset it directly.
