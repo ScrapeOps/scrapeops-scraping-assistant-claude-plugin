@@ -118,6 +118,35 @@ Claude can also fetch a live page if you don't have an HTML file locally — jus
 
 ---
 
+## Update
+
+To update to the latest version:
+
+```bash
+cd /path/to/scrapeops-scraping-assistant-claude-plugin
+
+# 1. Uninstall the old version
+./setup.sh --uninstall
+
+# 2. Pull the latest changes
+git pull origin main
+
+# 3. Reinstall
+./setup.sh
+
+# 4. Restart Claude Code
+```
+
+Your API key in `~/.claude/settings.json` is preserved — no need to reconfigure.
+
+You can also run it as a single command:
+
+```bash
+./setup.sh --uninstall && git pull origin main && ./setup.sh
+```
+
+---
+
 ## Uninstall
 
 To remove ScrapeOps from Claude Code:
