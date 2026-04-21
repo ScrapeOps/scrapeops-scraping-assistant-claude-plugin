@@ -1,0 +1,271 @@
+{
+  "name": {
+    "description": "The product name",
+    "type": "string",
+    "required": true,
+    "refactoring_priority": true,
+    "priority_level": "critical",
+    "null_value": ""
+  },
+  "productId": {
+    "description": "A unique identifier for the product",
+    "type": "string",
+    "required": true,
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "null_value": ""
+  },
+  "url": {
+    "description": "The absolute URL of the product page (must include protocol and domain, e.g., https://example.com/product)",
+    "type": "string",
+    "required": true,
+    "null_value": "",
+    "refactoring_priority": true,
+    "priority_level": "critical"
+  },
+  "brand": {
+    "description": "The brand name of the product",
+    "type": "string",
+    "required": true,
+    "null_value": "",
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "serialNumbers": {
+    "description": "Product identifiers and codes (ONLY unique product identifiers like ASIN, UPC, EAN, ISBN, SKU, GTIN. EXCLUDE model names/numbers)",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "items": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "Type of product identifier (e.g., ASIN, UPC, EAN, ISBN, SKU, GTIN, IMEI)",
+          "type": "string",
+          "enum": [
+            "ASIN",
+            "UPC",
+            "EAN",
+            "ISBN",
+            "SKU",
+            "GTIN",
+            "IMEI",
+            "Other"
+          ]
+        },
+        "value": {
+          "description": "The unique identifier value (alphanumeric code)",
+          "type": "string"
+        }
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "price": {
+    "description": "The current product price listed on the page",
+    "type": "number",
+    "required": true,
+    "refactoring_priority": true,
+    "priority_level": "high",
+    "null_value": 0
+  },
+  "currency": {
+    "description": "Currency for the price (e.g., GBP, USD)",
+    "type": "string",
+    "required": true,
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "null_value": ""
+  },
+  "preDiscountPrice": {
+    "description": "Original price ONLY if product is currently on sale/discount. Leave null if no discount exists.",
+    "type": "number",
+    "required": true,
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "null_value": null
+  },
+  "availability": {
+    "description": "General availability status of the product",
+    "required": true,
+    "type": "string",
+    "enum": [
+      "in_stock",
+      "out_of_stock",
+      "pre_order",
+      "discontinued"
+    ],
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "null_value": null
+  },
+  "category": {
+    "description": "Primary category of the product",
+    "type": "string",
+    "required": false,
+    "null_value": "",
+    "refactoring_priority": false,
+    "priority_level": "low"
+  },
+  "description": {
+    "description": "Detailed description of the product (can include HTML formatting)",
+    "type": "string",
+    "required": true,
+    "null_value": "",
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "aggregateRating": {
+    "description": "Aggregated rating information",
+    "type": "object",
+    "required": true,
+    "null_value": null,
+    "properties": {
+      "ratingValue": {
+        "description": "Average rating value",
+        "type": "number"
+      },
+      "reviewCount": {
+        "description": "Total number of reviews",
+        "type": "number"
+      },
+      "bestRating": {
+        "description": "The highest possible rating",
+        "type": "number"
+      },
+      "worstRating": {
+        "description": "The lowest possible rating",
+        "type": "number"
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "reviews": {
+    "description": "List of product reviews",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "observation": "Reviews are often contained within elements that have a `data-hook` attribute like 'review' or 'customer-review'. These elements can be `div`, `li`, or other container tags. Prioritize using the `data-hook` for selection over specific tag names or complex class combinations.",
+    "items": {
+      "type": "object",
+      "properties": {
+        "author": {
+          "description": "Name of the review author",
+          "type": "string"
+        },
+        "rating": {
+          "description": "Rating given by the reviewer",
+          "type": "number"
+        },
+        "title": {
+          "description": "Title of the review",
+          "type": "string"
+        },
+        "content": {
+          "description": "Content of the review",
+          "type": "string"
+        },
+        "date": {
+          "description": "Date of the review",
+          "type": "string"
+        }
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "images": {
+    "description": "Primary product images from the seller/website only (exclude user-uploaded images, customer reviews images, and similar products images)",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "items": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "Absolute image URL (must include protocol and domain)",
+          "type": "string"
+        }
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "observation": "CRITICAL: Use high-resolution images, NOT thumbnails. Look for the largest/highest quality version available"
+  },
+  "videos": {
+    "description": "List of videos related to the product",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "items": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "Absolute video URL (must include protocol and domain)",
+          "type": "string"
+        }
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium",
+    "observation": "Video data is often not in standard `<video>` tags but embedded as JSON within `<script>` tags, used to dynamically populate the media gallery. The parser should look for script tags containing keys like 'videoUrl', 'videos', or 'mediaData', extract the JSON content using regular expressions, and parse it to find video URLs. As a fallback, check image thumbnail elements for data attributes indicating a video type (e.g., `data-type='video'`)."
+  },
+  "features": {
+    "description": "List of product features. ",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "items": {
+      "type": "string",
+      "description": "Each product feature. From bullet points, etc. Extract full text."
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "specifications": {
+    "description": "List of product specifications",
+    "type": "list",
+    "required": true,
+    "null_value": [],
+    "items": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "Specification key",
+          "type": "string"
+        },
+        "value": {
+          "description": "Specification value",
+          "type": "string"
+        }
+      }
+    },
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  },
+  "seller": {
+    "description": "Information about the seller",
+    "type": "object",
+    "required": true,
+    "null_value": null,
+    "properties": {
+      "name": {
+        "description": "Seller's name",
+        "type": "string"
+      },
+      "url": {
+        "description": "Seller's absolute website URL (must include protocol and domain)",
+        "type": "string"
+      },
+      "rating": {
+        "description": "Seller's rating",
+        "type": "number"
+      }
+    },
+    "observation": "Seller information can appear in multiple offer blocks (e.g., 'New', 'Used', 'Refurbished'). The parser must first identify the primary offer block, which is often marked with a class like 'active' or 'selected', or is the first in a series of offer containers. All subsequent selectors for seller details should be scoped within this primary block to avoid extracting data from secondary offers.",
+    "refactoring_priority": true,
+    "priority_level": "medium"
+  }
+}

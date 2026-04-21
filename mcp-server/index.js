@@ -104,20 +104,65 @@ function getApiUrl() {
 
 // ─── Tool implementations ─────────────────────────────────────────────────────
 
-async function submitJob({ urls, target_language, target_library }) {
+async function submitJob({
+  urls,
+  target_language,
+  target_library,
+  country,
+  scraper_type,
+  parser_only,
+  schema_json,
+  max_pages,
+  concurrency,
+  input_from_jsonl,
+  include_api_key,
+}) {
   const api_key = getApiKey();
   const api_url = getApiUrl();
-  const body = JSON.stringify({
+  const payload = {
     urls,
     target_language,
     target_library,
-    parser_only: true,
+    // parser_only defaults to TRUE for the generate-scraper skill (HTML parser only,
+    // no HTTP client). The /generate-crawler-scraper skill must pass parser_only=false
+    // explicitly to get a full crawler/scraper with ScrapeOps proxy fetching baked in.
+    parser_only: typeof parser_only === "boolean" ? parser_only : true,
     sse_support: true,
-  });
-  return request(
+  };
+  if (country) payload.country = country;
+  if (scraper_type) payload.scraper_type = scraper_type;
+  if (schema_json && typeof schema_json === "object") payload.schema_json = schema_json;
+  if (typeof max_pages === "number" && max_pages > 0) payload.max_pages = max_pages;
+  if (typeof concurrency === "number" && concurrency > 0) payload.concurrency = concurrency;
+  if (input_from_jsonl === true) payload.input_from_jsonl = true;
+  // When false, the Go backend generates code with "YOUR-API-KEY" as a placeholder
+  // instead of the real hardcoded key. Callers (like the crawler-scraper skill)
+  // then swap the placeholder for an env-var read so the key doesn't live in source.
+  if (typeof include_api_key === "boolean") payload.include_api_key = include_api_key;
+
+  const body = JSON.stringify(payload);
+  const res = await requestLargeBody(
     `${api_url}/scraping-assistant/scraper_code_generator?api_key=${api_key}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body }
   );
+  // Strip internal/verbose fields the caller doesn't need to see.
+  if (res && typeof res === "object") {
+    delete res.queue_status;
+  }
+  return res;
+}
+
+async function getConcurrencyLimit() {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  const res = await request(
+    `${api_url}/scraping-assistant/account/concurrency-limit?api_key=${api_key}`,
+    { headers: { Api_key: api_key } }
+  );
+  if (res && typeof res === "object") {
+    delete res.plan_id;
+  }
+  return res;
 }
 
 async function pollStatus({ version_id }) {
@@ -255,19 +300,66 @@ async function getFixResult({ job_id }) {
   return request(`${api_url}/scraping-assistant/fix-session/${job_id}/result?api_key=${api_key}`);
 }
 
+// ─── Crawler-scraper flow (server-side orchestration) ─────────────────────────
+
+async function startCrawlerScraper({ domain, search_query, language, library }) {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  const body = JSON.stringify({ api_key, domain, search_query, language, library });
+  return request(
+    `${api_url}/scraping-assistant/crawler-scraper/start?api_key=${api_key}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body }
+  );
+}
+
+async function pollCrawlerScraperStatus({ job_id }) {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  await sleep(20_000);
+  const d = await request(
+    `${api_url}/scraping-assistant/crawler-scraper/${job_id}/status?api_key=${api_key}`
+  );
+  const progress = d.last_progress_message ? ` — ${d.last_progress_message}` : "";
+  return {
+    _summary: `Status: ${d.status}${d.error ? " — " + d.error : progress}`,
+    status: d.status,
+    progress: d.last_progress_message || null,
+    error: d.error || null,
+    iterations: d.iterations || 0,
+  };
+}
+
+async function getCrawlerScraperResult({ job_id }) {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  return request(
+    `${api_url}/scraping-assistant/crawler-scraper/${job_id}/result?api_key=${api_key}`
+  );
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = [
   {
     name: "scrapeops_submit_job",
     description:
-      "Submit a scraper generation job to the ScrapeOps API. Returns version_id. API key and URL are read from environment automatically.",
+      "Submit a scraper generation job to the ScrapeOps API. Returns version_id. API key and URL are read from environment automatically. " +
+      "Defaults to parser_only=true (HTML parser only, no HTTP client). " +
+      "The /generate-crawler-scraper skill passes parser_only=false plus scraper_type='product_crawler' and/or input_from_jsonl=true to get runnable crawlers/scrapers with ScrapeOps proxy fetching, pagination follow-through, and bounded concurrency baked in. " +
+      "schema_json overrides the backend's built-in data schemas with a user-provided schema (persisted to DO Spaces and reused across extraction, compression, and code generation).",
     inputSchema: {
       type: "object",
       properties: {
-        urls:            { type: "array", items: { type: "string" }, description: "1–5 URLs from the same domain" },
-        target_language: { type: "string", description: "e.g. python, javascript" },
-        target_library:  { type: "string", description: "e.g. beautifulsoup, cheerio" },
+        urls:             { type: "array", items: { type: "string" }, description: "1–5 URLs from the same domain" },
+        target_language:  { type: "string", description: "e.g. python, javascript, php, ruby, go, rust, java, csharp" },
+        target_library:   { type: "string", description: "e.g. beautifulsoup, cheerio, symfony/dom-crawler, nokogiri, goquery, scraper, jsoup, HtmlAgilityPack" },
+        country:          { type: "string", description: "Optional ISO country code for proxy geotargeting" },
+        scraper_type:     { type: "string", description: "Optional — e.g. 'product_crawler' for slim listing-page crawler; omit for auto-detect on detail pages" },
+        parser_only:      { type: "boolean", description: "Default true. Set false to get a full runnable scraper with HTTP fetching + concurrency (required for the crawler+scraper flow)" },
+        schema_json:      { type: "object", description: "Optional custom data schema (Go-format). When provided, bypasses dataSchema/*.json and LLM schema generation — persisted to DO Spaces so the pipeline reuses it" },
+        max_pages:        { type: "integer", description: "Crawler-only: stop pagination after N pages (default 3 in template)" },
+        concurrency:      { type: "integer", description: "Scraper-only: thread pool / promise pool size in the generated code" },
+        input_from_jsonl: { type: "boolean", description: "Scraper variant: generated code reads URLs from argv[1] JSONL file (produced by the crawler) instead of using hardcoded urls[]" },
       },
       required: ["urls", "target_language", "target_library"],
     },
@@ -322,6 +414,14 @@ const TOOLS = [
     },
   },
   {
+    name: "scrapeops_get_concurrency_limit",
+    description:
+      "Returns the authenticated account's ScrapeOps proxy concurrency limit (plan limit + extra concurrency). " +
+      "Used by the /generate-crawler-scraper skill to choose a safe --concurrency value for the generated scraper, so the user never exceeds their plan cap when running the scraper locally. " +
+      "Response: { concurrency_limit, plan_id, plan_limit, extra_concurrency }.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "scrapeops_start_fix",
     description:
       "Submit a parser fix job to the ScrapeOps agent service. Sends parser code and HTML files for server-side fixing. Returns job_id for polling. For follow-up fixes, pass the same job_id to reuse the existing workspace (HTMLs already fetched). PREFER html_paths over html_files — it avoids base64 encoding in Claude's context.",
@@ -364,17 +464,60 @@ const TOOLS = [
       required: ["job_id"],
     },
   },
+  {
+    name: "scrapeops_start_crawler_scraper",
+    description:
+      "Start a server-side crawler+scraper generation flow. The agent will: (1) discover the site's search URL pattern, (2) generate a slim crawler parser, (3) execute it to collect up to 5 product URLs, (4) generate a detailed product scraper, (5) merge both into a single self-contained parser. Returns job_id for polling. Takes several minutes to complete.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain:       { type: "string", description: "Target site domain, e.g. 'amazon.com' or 'mercadolivre.com.br'" },
+        search_query: { type: "string", description: "What the user wants to search for (natural language, e.g. 'mens t-shirts' or 'camisetas masculinas')" },
+        language:     { type: "string", description: "Target programming language (python, javascript, etc.)" },
+        library:      { type: "string", description: "Target library (beautifulsoup, cheerio, etc.)" },
+      },
+      required: ["domain", "search_query", "language", "library"],
+    },
+  },
+  {
+    name: "scrapeops_poll_crawler_scraper_status",
+    description:
+      "Wait 20 seconds then check crawler-scraper job status. Call repeatedly until status is 'completed' or 'failed'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Job ID returned by scrapeops_start_crawler_scraper" },
+      },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "scrapeops_get_crawler_scraper_result",
+    description:
+      "Get the final result of a completed crawler-scraper job. Returns crawler_code, product_code, and merged_code — all three parsers ready to save to disk.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Job ID" },
+      },
+      required: ["job_id"],
+    },
+  },
 ];
 
 const HANDLERS = {
-  scrapeops_submit_job:        submitJob,
-  scrapeops_poll_status:       pollStatus,
-  scrapeops_download_code:     downloadCode,
-  scrapeops_fetch_html:        fetchHtml,
-  scrapeops_fetch_html_batch:  fetchHtmlBatch,
-  scrapeops_start_fix:         startFix,
-  scrapeops_poll_fix_status:   pollFixStatus,
-  scrapeops_get_fix_result:    getFixResult,
+  scrapeops_submit_job:                    submitJob,
+  scrapeops_poll_status:                   pollStatus,
+  scrapeops_download_code:                 downloadCode,
+  scrapeops_fetch_html:                    fetchHtml,
+  scrapeops_fetch_html_batch:              fetchHtmlBatch,
+  scrapeops_get_concurrency_limit:         getConcurrencyLimit,
+  scrapeops_start_fix:                     startFix,
+  scrapeops_poll_fix_status:               pollFixStatus,
+  scrapeops_get_fix_result:                getFixResult,
+  scrapeops_start_crawler_scraper:         startCrawlerScraper,
+  scrapeops_poll_crawler_scraper_status:   pollCrawlerScraperStatus,
+  scrapeops_get_crawler_scraper_result:    getCrawlerScraperResult,
 };
 
 // ─── MCP method handlers ──────────────────────────────────────────────────────

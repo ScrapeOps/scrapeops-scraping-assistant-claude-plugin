@@ -8,6 +8,7 @@ Generate and fix production-ready web scrapers for any website using AI, directl
 
 - **`/generate-scraper`** — Tell Claude which website you want to scrape. It handles everything: fetches the page, analyzes the structure, generates the parser, runs it, and saves the output locally.
 - **`/fix-scraper`** — Have a broken scraper? Point Claude at your parser file and an HTML page. It diagnoses the issue, fixes the selectors, and validates the output — autonomously, without you writing a single line.
+- **`/generate-crawler-scraper`** — Describe a site and a search ("crawler on Amazon searching for mens t-shirts"). Claude discovers the search URL locally, generates a slim crawler that discovers product URLs, generates a detailed product scraper, and saves both as standalone files plus a README with run instructions. Supports standard scrapers (BeautifulSoup / Cheerio / etc.) and full Scrapy projects. Typically takes 15–30 minutes.
 
 **Supported languages:** Python (BeautifulSoup, Playwright, Selenium), JavaScript (Cheerio, Playwright, Puppeteer), PHP, Ruby, Go, Rust, Java, C#.
 
@@ -188,3 +189,9 @@ The pipeline fetches the page, analyzes it with AI, generates code, and validate
 - **Docs:** [scrapeops.io/docs/ai-scraper-builder/overview](https://scrapeops.io/docs/ai-scraper-builder/overview/)
 - **Issues:** Open an issue on this repository
 - **Email:** support@scrapeops.io
+
+---
+
+## License
+
+[MIT](LICENSE) — free for personal and commercial use.

@@ -75,7 +75,7 @@ Show:
   API Key: <first 8 chars>••••••••
   Backend: https://parser.scrapeops.io (default)
 
-You can now use /generate-scraper and /fix-scraper.
+You can now use /generate-scraper, /fix-scraper, and /generate-crawler-scraper.
 ```
 
 ---
