@@ -1,6 +1,6 @@
 ---
 name: fix-scraper
-description: Use this skill when the user wants to fix, correct, update, refactor, or extend an existing local scraper or parser file. This includes adding, removing, or changing fields/selectors in a scraper. Trigger when the user says things like "fix scraper", "repair scraper", "update scraper", "add field", "add a new field", "add X field to the scraper", "field is empty", "field is missing", "field is wrong", "scraper is broken", "scraper not working", "fix parser", "parser is broken", "change the selector", "extract X too", "also scrape X", "adicione um campo", or any request to modify an existing scraper/parser file — in any language.
+description: Use this skill when the user wants to fix, correct, update, refactor, or extend an existing local scraper or parser file. This includes adding, removing, or changing fields/selectors in a scraper. Trigger when the user says things like "fix scraper", "repair scraper", "update scraper", "add field", "add a new field", "add X field to the scraper", "field is empty", "field is missing", "field is wrong", "scraper is broken", "scraper not working", "fix parser", "parser is broken", "change the selector", "extract X too", "also scrape X", or any request to modify an existing scraper/parser file — in any language.
 version: 1.4.0
 ---
 

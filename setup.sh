@@ -8,7 +8,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
-SKILLS=(generate-scraper fix-scraper scrapeops-setup)
+SKILLS=(generate-scraper fix-scraper scrapeops-setup generate-crawler-scraper)
 AGENTS=(parser-fixer)
 
 # ─── Uninstall ────────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ claude mcp remove --scope user scrapeops 2>/dev/null || true
 
 claude mcp add --transport stdio --scope user scrapeops -- node "$REPO_DIR/mcp-server/index.js"
 
-echo "        scrapeops (4 tools)"
+echo "        scrapeops (11 tools)"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
@@ -110,6 +110,6 @@ echo "  Setup complete!"
 echo ""
 echo "  Next steps:"
 echo "    1. Restart Claude Code"
-echo "    2. Try /generate-scraper to build your first scraper"
+echo "    2. Try /generate-scraper, /fix-scraper, or /generate-crawler-scraper"
 echo "       (Claude will ask for your API key on first use)"
 echo ""

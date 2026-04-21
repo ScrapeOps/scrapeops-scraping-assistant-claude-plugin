@@ -1,0 +1,78 @@
+{
+    "searchMetadata": {
+        "description": "Information about the listing/search page being crawled",
+        "type": "object",
+        "required": false,
+        "properties": {
+            "query": {
+                "description": "The search query or category term, if applicable",
+                "type": "string",
+                "required": false
+            },
+            "searchUrl": {
+                "description": "URL of the current listing/search page",
+                "type": "string",
+                "required": true
+            }
+        }
+    },
+    "products": {
+        "description": "List of product URLs discovered on the listing page. This is the primary output of a crawler — detailed product fields are NOT extracted here.",
+        "type": "array",
+        "required": true,
+        "items": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "description": "Absolute URL to the product detail page (must include protocol and domain)",
+                    "type": "string",
+                    "required": true,
+                    "refactoring_priority": true,
+                    "priority_level": "critical"
+                },
+                "productId": {
+                    "description": "Unique identifier for the product (e.g., ASIN, SKU, item_id) — extract if visible in the URL or markup",
+                    "type": "string",
+                    "required": false,
+                    "refactoring_priority": true,
+                    "priority_level": "high"
+                },
+                "name": {
+                    "description": "Product name as displayed in the listing (optional, aids debugging)",
+                    "type": "string",
+                    "required": false,
+                    "priority_level": "medium"
+                }
+            }
+        }
+    },
+    "pagination": {
+        "description": "Pagination information for crawling additional pages",
+        "type": "object",
+        "required": false,
+        "properties": {
+            "currentPage": {
+                "description": "Current page number",
+                "type": "number",
+                "required": false
+            },
+            "totalPages": {
+                "description": "Total number of pages available",
+                "type": "number",
+                "required": false
+            },
+            "hasNextPage": {
+                "description": "Whether there is a next page available",
+                "type": "boolean",
+                "required": false
+            },
+            "nextPageUrl": {
+                "description": "Absolute URL to the next page of results (must include protocol and domain)",
+                "type": "string",
+                "required": false,
+                "refactoring_priority": true,
+                "priority_level": "critical"
+            }
+        }
+    }
+}
