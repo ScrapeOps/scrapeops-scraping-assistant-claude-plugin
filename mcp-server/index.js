@@ -128,6 +128,10 @@ async function submitJob({
     // explicitly to get a full crawler/scraper with ScrapeOps proxy fetching baked in.
     parser_only: typeof parser_only === "boolean" ? parser_only : true,
     sse_support: true,
+    // Identifies the origin of the request so the Go backend can distinguish
+    // plugin-submitted jobs from dashboard/server-internal ones. Every call that
+    // goes through this MCP tool comes from the Claude Code plugin by definition.
+    request_source: "plugin",
   };
   if (country) payload.country = country;
   if (scraper_type) payload.scraper_type = scraper_type;
@@ -175,8 +179,71 @@ async function pollStatus({ version_id }) {
   );
   const status = d.status ?? "";
   const progress = d.last_progress_message || d.step || "";
-  d._summary = `Status: ${status} — ${progress}`;
-  return d;
+  // ALWAYS strip the code fields from polling responses — the backend populates
+  // `output_code` / `link_output_code` mid-pipeline (before status = "completed"),
+  // which tempts the caller to proceed with incomplete code. The caller must use
+  // `scrapeops_get_code` AFTER status = "completed" to retrieve the final code.
+  delete d.output_code;
+  delete d.link_output_code;
+  return {
+    _summary: `Status: ${status} — ${progress}`,
+    status: d.status,
+    step: d.step,
+    last_progress_message: d.last_progress_message,
+    error_message: d.error_message,
+    language: d.language,
+    library: d.library,
+    install_command: d.install_command,
+    completed_at: d.completed_at,
+    version_id: d.version_id,
+  };
+}
+
+async function getCode({ version_id }) {
+  const api_key = getApiKey();
+  const api_url = getApiUrl();
+  const d = await request(
+    `${api_url}/scraping-assistant/job/${version_id}/status`,
+    { headers: { Api_key: api_key } }
+  );
+  if (d.status !== "completed") {
+    return {
+      _error: `Job status is "${d.status}", not "completed". Call scrapeops_poll_status until status is "completed" before calling scrapeops_get_code.`,
+      status: d.status,
+      step: d.step,
+    };
+  }
+  // Prefer inline `output_code`; fall back to downloading `link_output_code`.
+  if (d.output_code && String(d.output_code).trim().length > 0) {
+    return {
+      code: d.output_code,
+      language: d.language,
+      library: d.library,
+      install_command: d.install_command,
+      version_id: d.version_id,
+    };
+  }
+  if (d.link_output_code) {
+    const raw = await new Promise((resolve, reject) => {
+      const parsed = new URL(d.link_output_code);
+      const mod = parsed.protocol === "https:" ? https : http;
+      mod.get(d.link_output_code, (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString()));
+      }).on("error", reject);
+    });
+    return {
+      code: raw,
+      language: d.language,
+      library: d.library,
+      install_command: d.install_command,
+      version_id: d.version_id,
+    };
+  }
+  return {
+    _error: "Job is completed but neither output_code nor link_output_code is set — unexpected state.",
+  };
 }
 
 async function downloadCode({ url }) {
@@ -191,7 +258,7 @@ async function downloadCode({ url }) {
   });
 }
 
-async function fetchHtml({ url }) {
+async function fetchHtml({ url, output_path }) {
   const api_key = getApiKey();
   const api_url = getApiUrl();
   const body = JSON.stringify({ url });
@@ -202,7 +269,50 @@ async function fetchHtml({ url }) {
   if (response.status !== "success" || !response.html) {
     throw new Error(`Failed to fetch HTML from ${url}: ${response.error || response.status || "unknown error"}`);
   }
-  return { _raw: response.html };
+
+  const html = response.html;
+  const sizeBytes = Buffer.byteLength(html, "utf-8");
+  const INLINE_LIMIT = 200 * 1024; // 200KB — comfortable margin for Claude's context
+  const { writeFileSync, mkdirSync } = await import("fs");
+  const { dirname } = await import("path");
+
+  // Always write to disk when the caller passed an output_path OR when the HTML
+  // is big enough that returning inline would strain Claude's context window.
+  // For auto-saved files, use a predictable temp path so the caller can Read it.
+  let savedTo = null;
+  if (output_path || sizeBytes > INLINE_LIMIT) {
+    let finalPath = output_path;
+    if (!finalPath) {
+      // Save inside the caller's cwd (project dir) instead of /tmp/ — avoids
+      // permission-scope denials in Claude Code, where /tmp/ can be outside the
+      // user's allowed read paths. The folder `.scrapeops_cache/` should be
+      // added to .gitignore by the user if needed.
+      const { createHash } = await import("crypto");
+      const hash = createHash("sha1").update(url).digest("hex").slice(0, 12);
+      finalPath = `.scrapeops_cache/${hash}.html`;
+    }
+    try {
+      mkdirSync(dirname(finalPath), { recursive: true });
+    } catch (_) { /* dir may already exist */ }
+    writeFileSync(finalPath, html, "utf-8");
+    savedTo = finalPath;
+  }
+
+  // Oversized: never return the full body inline — would blow up Claude's context.
+  if (sizeBytes > INLINE_LIMIT) {
+    return {
+      saved_to: savedTo,
+      size_bytes: sizeBytes,
+      url,
+      note: `HTML too large to return inline (${Math.round(sizeBytes / 1024)} KB). Saved to ${savedTo}. Use the Read tool (with offset/limit) or Grep to inspect it.`,
+    };
+  }
+
+  // Small enough to be comfortably inlined. Also echo saved_to if the caller explicitly asked.
+  if (output_path) {
+    return { saved_to: savedTo, size_bytes: sizeBytes, url, _raw: html };
+  }
+  return { _raw: html };
 }
 
 async function fetchHtmlBatch({ urls, output_dir = "." }) {
@@ -367,7 +477,19 @@ const TOOLS = [
   {
     name: "scrapeops_poll_status",
     description:
-      "Wait 30 seconds then check job status. Call repeatedly until status is 'completed' or 'error'. API key and URL are read from environment automatically.",
+      "Wait 30 seconds then check job status. Call repeatedly until status is 'completed' or 'error'. API key and URL are read from environment automatically. IMPORTANT: this tool intentionally STRIPS the generated code (output_code / link_output_code) from the response — the backend populates those fields before the pipeline is finished, which would otherwise tempt the caller to proceed with incomplete code. Use scrapeops_get_code AFTER status is 'completed' to retrieve the final code.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        version_id: { type: "integer", description: "Job ID returned by scrapeops_submit_job" },
+      },
+      required: ["version_id"],
+    },
+  },
+  {
+    name: "scrapeops_get_code",
+    description:
+      "Retrieve the generated scraper code for a completed job. ONLY call this AFTER scrapeops_poll_status has returned status = 'completed'. If the job isn't completed yet, this tool returns an error. The response includes the code (inline, already downloaded if the backend returned a link), language, library, and install_command.",
     inputSchema: {
       type: "object",
       properties: {
@@ -391,11 +513,15 @@ const TOOLS = [
   {
     name: "scrapeops_fetch_html",
     description:
-      "Fetch rendered HTML from a URL via the ScrapeOps proxy (used by fix-scraper). API key and URL are read from environment automatically.",
+      "Fetch rendered HTML from a URL via the ScrapeOps proxy. API key and URL are read from environment automatically. " +
+      "Behavior: HTML over 200 KB is automatically saved to ./.scrapeops_cache/<hash>.html (relative to the process cwd — i.e. inside the user's project, so Read/Grep work without permission issues) and the response returns { saved_to, size_bytes, note } instead of inline text (prevents context overflow). " +
+      "For small HTML, inline text is returned as _raw. " +
+      "To force save to a specific path, pass `output_path` (any relative or absolute path the caller has write access to).",
     inputSchema: {
       type: "object",
       properties: {
         url: { type: "string", description: "Page URL to fetch" },
+        output_path: { type: "string", description: "Optional: save the HTML to this exact path. When omitted, small HTML is returned inline and large HTML is auto-saved to ./.scrapeops_cache/ (cwd-relative)." },
       },
       required: ["url"],
     },
@@ -508,6 +634,7 @@ const TOOLS = [
 const HANDLERS = {
   scrapeops_submit_job:                    submitJob,
   scrapeops_poll_status:                   pollStatus,
+  scrapeops_get_code:                      getCode,
   scrapeops_download_code:                 downloadCode,
   scrapeops_fetch_html:                    fetchHtml,
   scrapeops_fetch_html_batch:              fetchHtmlBatch,

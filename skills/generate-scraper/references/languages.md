@@ -4,7 +4,7 @@
 
 | Library | `target_library` value | Description |
 |---------|----------------------|-------------|
-| **BeautifulSoup** (recommended) | `beautifulsoup` | Simple HTML parsing with requests |
+| **BeautifulSoup** | `beautifulsoup` | Simple HTML parsing with requests |
 | **Playwright** | `playwright` | Browser automation, handles JavaScript |
 | **Selenium** | `selenium` | Browser automation, handles JavaScript |
 
@@ -12,7 +12,7 @@
 
 | Library | `target_library` value | Description |
 |---------|----------------------|-------------|
-| **Cheerio + Axios** (recommended) | `cheerio` | Lightweight jQuery-like parsing |
+| **Cheerio + Axios** | `cheerio` | Lightweight jQuery-like parsing |
 | **Playwright** | `playwright` | Browser automation, handles JavaScript |
 | **Puppeteer** | `puppeteer` | Headless Chrome automation |
 
