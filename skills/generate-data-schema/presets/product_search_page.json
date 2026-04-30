@@ -1,0 +1,143 @@
+{
+    "searchMetadata": {
+        "description": "Information about the search results page",
+        "type": "object",
+        "required": false,
+        "properties": {
+            "query": {
+                "description": "The keyword/search term that produced this results page",
+                "type": "string",
+                "required": false
+            },
+            "searchUrl": {
+                "description": "URL of the current search results page",
+                "type": "string",
+                "required": true
+            },
+            "totalResults": {
+                "description": "Total number of results reported by the page (when displayed)",
+                "type": "number",
+                "required": false
+            }
+        }
+    },
+    "products": {
+        "description": "List of product cards visible on the search results page. Each card carries the data shown directly in the listing — no follow-up to product detail pages.",
+        "type": "array",
+        "required": true,
+        "items": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "description": "Absolute URL to the product detail page (must include protocol and domain)",
+                    "type": "string",
+                    "required": true,
+                    "refactoring_priority": true,
+                    "priority_level": "critical"
+                },
+                "productId": {
+                    "description": "Unique identifier for the product (e.g., ASIN, SKU, item_id) — extract if visible in the URL or markup",
+                    "type": "string",
+                    "required": false,
+                    "refactoring_priority": true,
+                    "priority_level": "high"
+                },
+                "name": {
+                    "description": "Product name / title as displayed on the search card",
+                    "type": "string",
+                    "required": true,
+                    "refactoring_priority": true,
+                    "priority_level": "critical",
+                    "null_value": ""
+                },
+                "price": {
+                    "description": "Current price of the product as a number (no currency symbol). Use the visible card price, not strikethrough/list price.",
+                    "type": "number",
+                    "required": false,
+                    "refactoring_priority": true,
+                    "priority_level": "high",
+                    "null_value": 0
+                },
+                "currency": {
+                    "description": "Currency code or symbol associated with `price` (e.g. \"USD\", \"$\", \"R$\")",
+                    "type": "string",
+                    "required": false,
+                    "priority_level": "medium",
+                    "null_value": ""
+                },
+                "originalPrice": {
+                    "description": "Original / pre-discount price when the card shows a strikethrough or 'was' price",
+                    "type": "number",
+                    "required": false,
+                    "priority_level": "low",
+                    "null_value": 0
+                },
+                "image": {
+                    "description": "Absolute URL of the primary product image displayed on the card",
+                    "type": "string",
+                    "required": false,
+                    "refactoring_priority": true,
+                    "priority_level": "high",
+                    "null_value": ""
+                },
+                "rating": {
+                    "description": "Average customer rating as a number (e.g. 4.5)",
+                    "type": "number",
+                    "required": false,
+                    "priority_level": "medium",
+                    "null_value": 0
+                },
+                "reviewsCount": {
+                    "description": "Number of customer reviews displayed alongside the rating",
+                    "type": "number",
+                    "required": false,
+                    "priority_level": "medium",
+                    "null_value": 0
+                },
+                "availability": {
+                    "description": "Stock / availability hint shown on the card (e.g. 'In stock', 'Only 2 left', 'Out of stock')",
+                    "type": "string",
+                    "required": false,
+                    "priority_level": "low",
+                    "null_value": ""
+                },
+                "sponsored": {
+                    "description": "Whether the card is marked as sponsored / ad / promoted",
+                    "type": "boolean",
+                    "required": false,
+                    "priority_level": "low",
+                    "null_value": false
+                }
+            }
+        }
+    },
+    "pagination": {
+        "description": "Pagination information used to walk additional pages of results",
+        "type": "object",
+        "required": false,
+        "properties": {
+            "currentPage": {
+                "description": "Current page number",
+                "type": "number",
+                "required": false
+            },
+            "totalPages": {
+                "description": "Total number of pages available for this search",
+                "type": "number",
+                "required": false
+            },
+            "hasNextPage": {
+                "description": "Whether there is a next page available",
+                "type": "boolean",
+                "required": false
+            },
+            "nextPageUrl": {
+                "description": "Absolute URL to the next page of results (must include protocol and domain)",
+                "type": "string",
+                "required": false,
+                "refactoring_priority": true,
+                "priority_level": "high"
+            }
+        }
+    }
+}

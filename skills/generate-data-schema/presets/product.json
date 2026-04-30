@@ -130,12 +130,12 @@
         "description": "Total number of reviews",
         "type": "number"
       },
-      "bestRating": {
-        "description": "The highest possible rating",
+      "bestPossibleRating": {
+        "description": "The highest rating value the scale allows (e.g. 5 on a 1-5 scale). NOT the highest rating any user has given.",
         "type": "number"
       },
-      "worstRating": {
-        "description": "The lowest possible rating",
+      "worstPossibleRating": {
+        "description": "The lowest rating value the scale allows (e.g. 1 on a 1-5 scale). NOT the lowest rating any user has given.",
         "type": "number"
       }
     },

@@ -73,6 +73,8 @@ header: "Library"
 options:
   - label: "Cheerio"
     description: "Server-side HTML parser used with axios."
+  - label: "Crawlee"
+    description: "Full Node.js crawling framework — built on Cheerio/Playwright with request queue and proxy management."
   - label: "Playwright"
     description: "Real browser — use when JS rendering is required."
   - label: "Puppeteer"
@@ -137,7 +139,13 @@ Reference: [`../generate-scraper/references/languages.md`](../generate-scraper/r
 
 **Current caveat**: end-to-end templates with pagination follow-through are polished for **Python + JavaScript**. Other languages still work but the crawler may only handle page 1 (LLM fills in what it can). Warn the user if they pick something other than Python/JS.
 
-**Scrapy is special — if the user picks Scrapy, take a completely different path.** Scrapy is a full framework with its own project structure (spiders, items, pipelines, middlewares, settings). You will NOT produce two standalone `.py` files. Instead, follow the **Scrapy Mode** workflow in the section below. Skip the normal Steps 6–14; they assume standalone scripts with built-in proxy fetching.
+**Scrapy and Crawlee are framework libraries — if the user picks one, take a completely
+different path (Framework Mode).** Both impose their own project structure (Scrapy:
+spiders/items/pipelines/middlewares/settings; Crawlee: crawlers/routers/proxy
+configuration). You will NOT produce two standalone scripts. Instead, follow the
+**Framework Mode** workflow in the section below — sub-section `## Scrapy (Python)` for
+Scrapy, sub-section `## Crawlee (JavaScript)` for Crawlee. Skip the normal Steps 6–14;
+they assume standalone scripts with built-in proxy fetching.
 
 ### 1.4 — `max_pages`
 
@@ -698,13 +706,54 @@ Save as `README.md` using the **Write** tool.
 
 ---
 
-# Scrapy Mode
+# Framework Mode
+
+Active when the user picks **Python + Scrapy** or **JavaScript + Crawlee** in Step 1.
+Both libraries are full frameworks with their own project structure, request lifecycle,
+and concurrency model. You do NOT generate two standalone scripts with backend-baked
+proxy fetching — instead, ask the Go backend for `parser_only: true` extractor functions
+and **assemble a framework project locally** around them.
+
+Two sub-paths share Steps 1–5 from the default mode (input collection, URL discovery,
+schema generation, concurrency fetch):
+
+- **`## Scrapy (Python)`** — sub-section S-Scrapy-1 to S-Scrapy-9 below.
+- **`## Crawlee (JavaScript)`** — sub-section S-Crawlee-1 to S-Crawlee-9 below.
+
+**MANDATORY for both sub-paths**: consult the ScrapeOps proxy docs at runtime, **every
+single run**. The plugin must extract the current proxy endpoint, auth format, and
+optional parameters from the live docs before writing any proxy code:
+
+| Proxy product | Canonical doc URL |
+|---|---|
+| Proxy API Aggregator | `https://scrapeops.io/docs/web-scraping-proxy-api-aggregator/quickstart/` |
+| Residential & Mobile Proxy Aggregator | `https://scrapeops.io/docs/residential-mobile-proxy-aggregator/overview/` |
+
+Fetch order: `WebFetch` first (faster and parsed for you), `Bash curl` with a browser UA
+as fallback (Cloudflare blocks WebFetch on parts of `scrapeops.io`), then
+`../generate-scraper/references/proxies.md` as offline insurance. Warn the user explicitly
+if both network paths fail.
+
+The decision matrix between the two proxy products lives in
+`../generate-scraper/references/frameworks.md` Section C. In short: HTTP-based transport
+(Scrapy default downloader, Crawlee `CheerioCrawler`) → **Proxy API Aggregator**
+(URL rewrite); browser transport (Crawlee `PlaywrightCrawler`) → **Residential & Mobile
+Proxy Aggregator** (proxy on the wire).
+
+---
+
+## Scrapy (Python)
 
 If in Step 1 the user selected **Python + Scrapy**, STOP following Steps 6–14 above. Scrapy is a framework with its own project structure, its own concurrency control (`CONCURRENT_REQUESTS` in settings.py), and its own HTTP layer (Twisted). You do NOT generate two standalone Python scripts with `requests` — you generate a full **Scrapy project**.
 
 **Pure Scrapy — no BeautifulSoup anywhere.** The final spiders extract data using native `response.css(...)` / `response.xpath(...)` selectors. The Go backend happens to return a BS4 extraction snippet (because that's what the Go templates produce today), but the skill **converts it locally** to native Scrapy selectors before writing any spider file. The generated project has `scrapy` as its only direct dependency — no `beautifulsoup4`, no `lxml` install line, no `from bs4` imports.
 
-**ScrapeOps proxy is ENABLED by default** — every outgoing request goes through `https://proxy.scrapeops.io/v1/` for IP rotation, anti-bot bypass, and optional JS rendering. The user must `export SCRAPEOPS_API_KEY=...` before running scrapy. If they want to bypass the proxy (debug, hitting a local site, etc), they comment out the middleware entry in `settings.py`.
+**ScrapeOps proxy is ENABLED by default** — every outgoing request goes through the
+**Proxy API Aggregator** (`https://proxy.scrapeops.io/v1/`) for IP rotation, anti-bot
+bypass, and optional JS rendering. URL rewrite via `DownloaderMiddleware` is the
+idiomatic way to inject proxy in Scrapy. The user must `export SCRAPEOPS_API_KEY=...`
+before running scrapy. If they want to bypass the proxy (debug, hitting a local site,
+etc), they comment out the middleware entry in `settings.py`.
 
 **Do NOT copy structure from this SKILL.md.** Scrapy's recommended project layout, setting names, middleware API, and install commands evolve over time. Every Scrapy Mode run consults the official Scrapy + Python Packaging docs at generation time via `Bash curl` (the Claude Code `WebFetch` tool is blocked by those sites' Cloudflare layer), then builds files from the **current** documented patterns. Hardcoded templates at the bottom of this file exist ONLY as offline fallback when doc fetches fail.
 
@@ -922,7 +971,9 @@ Scrapy's `Selector` objects returned by `.css()` can be chained exactly like BS4
 
 Compute `slug = <domain-slug>_scrapy` (e.g. `walmart_com_scrapy`) and `project_pkg = <domain-slug>` (no dashes, valid Python identifier, e.g. `walmart_com`).
 
-Create files using the **layout and settings key names you extracted from the docs in S2**, NOT from SKILL.md. For each file:
+Create files using the **layout and settings key names you extracted from the docs in S2**, NOT from SKILL.md. **The project must use Scrapy's full native machinery** — selectors mixing CSS+XPath, ItemLoaders, real Item Pipelines (validation/dedup/normalization), middlewares, autothrottle. The required-features list and validation greps live in `../generate-scraper/references/frameworks.md` Section E.1 and E.3 — read those before assembling, and run the greps before declaring the project done.
+
+For each file:
 
 ### Root config file (today: `scrapy.cfg`)
 
@@ -933,10 +984,11 @@ Minimal — points at the project package's `settings` module. Confirm the exact
 Must include:
 - `BOT_NAME`, `SPIDER_MODULES`, `NEWSPIDER_MODULE` — standard per docs.
 - `import os` and `SCRAPEOPS_API_KEY = os.environ.get("SCRAPEOPS_API_KEY", "")` — read from env.
-- `DOWNLOADER_MIDDLEWARES` registering `ScrapeOpsProxyMiddleware` at priority 725 (or whatever the current docs suggest for a request-rewriting middleware).
-- `ITEM_PIPELINES` registering the project's `JsonLinesPipeline`.
+- `DOWNLOADER_MIDDLEWARES` registering `ScrapeOpsProxyMiddleware` at priority 725 (or whatever the current docs suggest for a request-rewriting middleware). Scrapy's built-in `RetryMiddleware` is enabled by default — don't disable it.
+- `ITEM_PIPELINES` registering all three real pipelines defined below: `ValidationPipeline` (priority 100), `DuplicatesPipeline` (200), `NormalizationPipeline` (300).
 - `CONCURRENT_REQUESTS = <CONCURRENCY>` and `CONCURRENT_REQUESTS_PER_DOMAIN = <CONCURRENCY>`.
 - `DOWNLOAD_TIMEOUT = 60`, `RETRY_TIMES = 3`, `RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]`.
+- **Autothrottle ON**: `AUTOTHROTTLE_ENABLED = True`, `AUTOTHROTTLE_START_DELAY = 1.0`, `AUTOTHROTTLE_MAX_DELAY = 10.0`, `AUTOTHROTTLE_TARGET_CONCURRENCY = <CONCURRENCY>`.
 - `ROBOTSTXT_OBEY = False` (we're scraping through a paid proxy — robots.txt irrelevant here).
 - `LOG_LEVEL = "INFO"`.
 - `USER_AGENT` — a realistic browser UA.
@@ -953,11 +1005,21 @@ Don't let the middleware rewrite already-proxied URLs (guard: `if request.url.st
 
 ### `<project_pkg>/items.py`
 
-One class `ProductItem(scrapy.Item)` with `scrapy.Field()` for each top-level field in `product_schema.json`. Pick only scalar fields and flat arrays/objects — don't flatten deeply-nested reviews/specs into individual fields; keep those as single `scrapy.Field()` that holds the list/dict.
+Two classes:
+
+1. `ProductItem(scrapy.Item)` with `scrapy.Field()` for each top-level field in `product_schema.json`. Pick only scalar fields and flat arrays/objects — don't flatten deeply-nested reviews/specs into individual fields; keep those as single `scrapy.Field()` that holds the list/dict.
+
+2. `ProductLoader(scrapy.loader.ItemLoader)` (or `from itemloaders import ItemLoader` in modern Scrapy — confirm via S2's settings doc). Set `default_output_processor = TakeFirst()` and add `_in` / `_out` processors per field as needed: `MapCompose(str.strip)` for whitespace cleanup, `MapCompose(str.strip, _to_number)` for prices, `Identity()` for lists you want preserved, `Join(" ")` for description-style joined text. The product spider populates this loader rather than mutating a raw dict.
 
 ### `<project_pkg>/pipelines.py`
 
-Minimal `JsonLinesPipeline` with a no-op `process_item` that returns the item unchanged. Documented as a hook for future dedup/normalization. Scrapy's native `-O <file>.jsonl` flag handles JSONL writing — this pipeline is just there to register the hook point.
+Three real pipelines (no no-ops):
+
+1. `ValidationPipeline` — drops items missing required keys (`url`, plus the schema's required fields). Raises `DropItem` from `scrapy.exceptions` with a clear message.
+2. `DuplicatesPipeline` — keeps a set of seen `url` (or `productId` if present) and drops duplicates.
+3. `NormalizationPipeline` — collapses whitespace inside strings, resolves relative URLs against the original request URL (use `urljoin`), coerces price-like fields to floats where possible.
+
+Scrapy's native `-O <file>.jsonl` flag handles JSONL writing — do not write a custom file pipeline.
 
 ### `<project_pkg>/spiders/crawler.py`
 
@@ -977,15 +1039,15 @@ Structure:
 
 Structure:
 - `import json`, `import scrapy`
-- `from <project_pkg>.items import ProductItem`
+- `from <project_pkg>.items import ProductItem, ProductLoader`
 - Paste `product_parser_scrapy_body` (the **converted** function)
 - `class ProductSpider(scrapy.Spider)`:
   - `name = "product"`
   - `__init__(self, urls_file=None, ...)` — accept `-a urls_file=urls.jsonl`
   - `start_requests()` reads the JSONL line-by-line, yields one `scrapy.Request` per `url`.
-  - `parse_product(self, response)` calls `extract_data(response)`, assigns `data["url"] = response.meta.get("source_url") or response.url`, populates `ProductItem`, yields it.
+  - `parse_product(self, response)` calls `extract_data(response, response.url)`, then **populates a `ProductLoader`** (NOT a raw dict): instantiate `loader = ProductLoader(item=ProductItem(), response=response)`, iterate the extractor's output and call `loader.add_value(key, value)` for each key in `ProductItem.fields`, finally `yield loader.load_item()`. The loader's processors handle whitespace/type coercion centrally so the spider stays small.
 
-**Strictly no BS4.** Same rule — spider calls `extract_data(response)` directly.
+**Strictly no BS4.** Same rule — spider calls `extract_data(response, ...)` directly. Mix CSS and XPath inside `extract_data` per `../generate-scraper/references/frameworks.md` Section A.2.
 
 ### Also write
 
@@ -995,13 +1057,25 @@ Structure:
 
 ### Final validation before moving to S7
 
-Run a Bash pass against the whole project:
+Two grep passes, both required:
+
+**1) BS4-purity grep** — must return **zero matches**. If anything shows up, fix before smoke test (project violates the "pure Scrapy" contract):
 
 ```bash
 grep -rE 'BeautifulSoup|from bs4|import bs4|\.get_text\(|soup\.find\(|soup\.select\(' <slug>/<project_pkg>/ 2>/dev/null
 ```
 
-Must return **zero matches**. If anything shows up, fix it before the smoke test. The project is broken (violates the "pure Scrapy" contract) if this grep ever matches.
+**2) Native-features grep** — each line below must NOT print `MISSING:`. If any does, the project is not idiomatic; fix the assembly:
+
+```bash
+grep -E 'class .*Loader' <slug>/<project_pkg>/items.py || echo "MISSING: ItemLoader subclass"
+grep -E 'AUTOTHROTTLE_ENABLED\s*=\s*True' <slug>/<project_pkg>/settings.py || echo "MISSING: autothrottle"
+grep -E 'class ValidationPipeline|class DuplicatesPipeline|class NormalizationPipeline' <slug>/<project_pkg>/pipelines.py || echo "MISSING: real pipelines"
+grep -E 'ITEM_PIPELINES' <slug>/<project_pkg>/settings.py || echo "MISSING: ITEM_PIPELINES"
+grep -E 'load_item\(' <slug>/<project_pkg>/spiders/product.py || echo "MISSING: spider uses ItemLoader.load_item()"
+```
+
+Reference list of required features: `../generate-scraper/references/frameworks.md` Section E.1.
 
 ## S7 — Install deps + smoke test + local self-heal
 
@@ -1121,15 +1195,481 @@ Write `<slug>/README.md`. Structure (adapt from the default-mode README template
 - Do NOT mention `beautifulsoup4` anywhere. The project has no BS4.
 - Do NOT show `python3 -m venv .venv && source .venv/bin/activate` hardcoded — use what S3's fetch returned (which is probably the same but might differ per OS or when pyproject PEPs change).
 
-## Scrapy Mode notes
+---
 
-- **Never** mix Scrapy mode with the standalone-script mode. If the user picks `library=scrapy`, all output lives inside the Scrapy project dir.
-- **ScrapeOps proxy is ON by default.** Tell the user they need `export SCRAPEOPS_API_KEY=...` before running scrapy. To bypass the proxy, they comment out the middleware entry in `settings.py`.
-- **DO call `scrapeops_get_concurrency_limit`** — `CONCURRENT_REQUESTS` respects the plan cap.
-- **Zero BS4 in the generated project.** If the final grep (end of S6) matches BS4 tokens anywhere in `<slug>/<project_pkg>/`, the skill is broken and must re-run the S5 conversion.
-- **Docs are the source of truth**, not SKILL.md. If Scrapy renames a setting or changes middleware API, you pick that up on the next run via S2's `curl` downloads. No need to manually sync this skill.
-- **Fallback templates exist** (appendix below) for when `docs.scrapy.org` is unreachable. Those are guaranteed to produce a working project but may be slightly behind the current docs. Use only when fetches fail.
-- **Fix-scraper path**: for local self-heal on a spider, invoke the `parser-fixer` agent DIRECTLY (not the `/fix-scraper` skill) — same pattern as the default mode. Pass `parser_path=<slug>/<project_pkg>/spiders/<crawler|product>.py`, `language=python`.
+## Crawlee (JavaScript)
+
+If in Step 1 the user selected **JavaScript + Crawlee**, STOP following Steps 6–14 above.
+Crawlee is a Node.js framework with its own request queue, concurrency control
+(`maxConcurrency` on the crawler instance), proxy management (`ProxyConfiguration`), and
+storage layer (`./storage/`). You do NOT generate two standalone `.js` files with
+hand-rolled axios — you generate a full **Crawlee project** with two crawler entrypoints
+(`src/crawler.js`, `src/scraper.js`) and a shared extractor + proxy module.
+
+**Crawlee with Cheerio transport — no axios anywhere.** The final crawlers extract data via
+the `$` Cheerio object provided by `CheerioCrawler`'s request handler. The Go backend
+returns a Cheerio `extract_data($, baseUrl)` function which Crawlee can use directly — no
+selector conversion needed (unlike Scrapy/BS4). The generated project has `crawlee` as
+its only direct dependency.
+
+**ScrapeOps proxy is ENABLED by default.** For HTTP-based `CheerioCrawler` (the default
+choice for crawler+scraper combos) the proxy is the **Proxy API Aggregator**, injected
+via `preNavigationHooks` rewriting `request.url` to `https://proxy.scrapeops.io/v1/?api_key=...&url=...`.
+For browser-based `PlaywrightCrawler` (only if user explicitly asked for JS rendering),
+the proxy switches to **Residential & Mobile Proxy Aggregator** via `ProxyConfiguration`
+pointing at `residential-proxy.scrapeops.io:8181` with basic auth. The user must
+`export SCRAPEOPS_API_KEY=...` before running the crawlers.
+
+**Do NOT copy structure from this SKILL.md.** Crawlee's API surface (handler argument
+names, `enqueueLinks` shape, `proxyConfiguration` constructor) evolves between versions.
+Every Crawlee Mode run consults the official Crawlee docs at generation time, then builds
+files from the **current** documented patterns. The reference templates in
+`../generate-scraper/references/frameworks.md` Section B are offline fallback only.
+
+### S-Crawlee-1 — Keep Steps 1–5 as-is
+
+Same as Scrapy mode S1 — input collection, listing URL discovery, schema generation, and
+concurrency fetch run identically to the default mode. At the end you have:
+
+- `LISTING_URL`
+- `crawler_schema.json` (from `/generate-data-schema`)
+- `CONCURRENCY` (from `scrapeops_get_concurrency_limit`)
+
+`product_schema.json` is generated later in S-Crawlee-4 after sampling product URLs.
+`CONCURRENCY` becomes `maxConcurrency` on the Crawlee instance.
+
+### S-Crawlee-2 — Consult Crawlee official docs (MANDATORY)
+
+`crawlee.dev` is generally accessible via `WebFetch`. Try WebFetch first; fall back to
+`Bash curl` only if it fails.
+
+```bash
+UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+curl -sSL -A "$UA" "https://crawlee.dev/docs/quick-start"                       -o /tmp/crawlee_quickstart.html
+curl -sSL -A "$UA" "https://crawlee.dev/docs/guides/proxy-management"          -o /tmp/crawlee_proxy.html
+curl -sSL -A "$UA" "https://crawlee.dev/api/cheerio-crawler/class/CheerioCrawler" -o /tmp/crawlee_cheerio.html
+curl -sSL -A "$UA" "https://crawlee.dev/docs/guides/routing"                    -o /tmp/crawlee_routing.html
+
+for f in /tmp/crawlee_quickstart.html /tmp/crawlee_proxy.html /tmp/crawlee_cheerio.html /tmp/crawlee_routing.html; do
+  head -c 200 "$f" | grep -q "<html\|<!DOCTYPE" && echo "OK $f" || echo "FAIL $f"
+done
+```
+
+Extract from these:
+
+- **quickstart** → minimum viable `CheerioCrawler` shape, default storage location.
+- **proxy** → current `ProxyConfiguration` constructor API, recommended ways to wire a
+  proxy URL with auth.
+- **cheerio** → `requestHandler` parameter list (`{ $, request, pushData, enqueueLinks }`).
+- **routing** → `createCheerioRouter()` pattern when there are multiple page types.
+
+If all four fetches fail, fall back to `../generate-scraper/references/frameworks.md`
+Section B and warn the user.
+
+### S-Crawlee-3 — Consult ScrapeOps proxy docs (MANDATORY every run)
+
+Same rule as Scrapy mode but with the **two ScrapeOps proxy URLs**:
+
+- `https://scrapeops.io/docs/web-scraping-proxy-api-aggregator/quickstart/`
+- `https://scrapeops.io/docs/residential-mobile-proxy-aggregator/overview/`
+
+WebFetch → curl-fallback → `../generate-scraper/references/proxies.md`. Extract endpoint,
+auth format, and listed optional parameters from each. The proxy snippet in
+`src/proxy.js` (S-Crawlee-6) MUST reflect what the live docs say — do not hardcode from
+this SKILL.md or the offline reference unless network is unreachable.
+
+### S-Crawlee-4 — Submit two `parser_only` jobs to the Go backend
+
+Submit **two `parser_only: true` jobs** with `target_library: "cheerio"` (intermediate —
+Cheerio is the native parser inside `CheerioCrawler`).
+
+**Job 1 — crawler parser** (listing page):
+```json
+{
+  "urls": ["<LISTING_URL>"],
+  "target_language": "javascript",
+  "target_library": "cheerio",
+  "scraper_type": "product_crawler",
+  "parser_only": true,
+  "schema_json": <crawler_schema.json>
+}
+```
+
+Poll `scrapeops_poll_status` until `status === "completed"` (same CRITICAL rule as Step 6
+of the default mode). Call `scrapeops_get_code` and save the returned `code` as
+`crawler_parser_cheerio_body` (a JS function `extract_data($, baseUrl)`).
+
+**Sample 3 product URLs.** After Job 1 finishes, run the returned Cheerio extractor
+against the listing HTML to collect 3 product URLs for Job 2:
+
+```javascript
+// /tmp/scratch_crawl.mjs — throwaway, runs once
+import * as cheerio from "cheerio";
+import { writeFileSync } from "node:fs";
+
+<crawler_parser_cheerio_body>
+
+const listingHtml = process.argv[2] ? require("node:fs").readFileSync(process.argv[2], "utf8") : "";
+const baseUrl = process.argv[3] || "<LISTING_URL>";
+const $ = cheerio.load(listingHtml);
+console.log(JSON.stringify(extract_data($, baseUrl)));
+```
+
+(For the Cheerio `cheerio.load(html)` invocation, you need the raw listing HTML on disk.
+Pull it via `scrapeops_fetch_html` if direct `fetch` is blocked.)
+
+This wrapper is intentionally Cheerio-based — the Go-returned body expects `$`. Runs
+**once** to collect sample URLs, then gets deleted. NOT the final code.
+
+Invoke `/generate-data-schema` with `target_page_type: product` to produce
+`product_schema.json`.
+
+**Job 2 — product parser** (detail pages):
+```json
+{
+  "urls": [the 3 sampled product URLs],
+  "target_language": "javascript",
+  "target_library": "cheerio",
+  "parser_only": true,
+  "schema_json": <product_schema.json>
+}
+```
+
+Poll until `completed`. Call `scrapeops_get_code` and save as `product_parser_cheerio_body`.
+
+Delete the throwaway `/tmp/scratch_crawl.mjs` now that sampling is done.
+
+### S-Crawlee-5 — Adapter conversion (trivial for Cheerio)
+
+Cheerio is the native parser of `CheerioCrawler` — no selector conversion. Just verify
+the function signatures match the contract:
+
+- Parameter list: `($, baseUrl)` — `$` is the Cheerio root, `baseUrl` is a string.
+- Return: a plain object (the extracted data) or `null`.
+
+If the Go backend returned a different signature (rare), normalize it before pasting.
+
+**Validation grep** — run after writing the project (S-Crawlee-6). Must return zero matches:
+
+```bash
+grep -rE "require\(['\"]axios['\"]\)|from ['\"]axios['\"]|require\(['\"]https?['\"]\)" <slug>_crawlee/src/
+```
+
+If matches show up, the function unexpectedly contains its own HTTP client — invoke
+`parser-fixer` to strip those lines, since Crawlee owns transport.
+
+### S-Crawlee-6 — Build the Crawlee project files (structure from S-Crawlee-2 docs)
+
+Compute `slug = <domain-slug>_crawlee` (e.g. `walmart_com_crawlee`). All files live under
+`<slug>/`.
+
+Create these files using the **layout you extracted from the docs in S-Crawlee-2**, NOT
+from SKILL.md. Reference fallback templates in
+`../generate-scraper/references/frameworks.md` Section B.4 if a fetch failed.
+
+**The project must use Crawlee's full native machinery** — Cheerio selectors mixing CSS
+and traversal helpers (or `page.locator('css=...')` / `page.locator('xpath=...')` for
+`PlaywrightCrawler`), `createCheerioRouter()` (or `createPlaywrightRouter()`),
+`useSessionPool: true` with `sessionPoolOptions`, `failedRequestHandler` writing to a
+`failed` Dataset, `maxConcurrency`, `preNavigationHooks` for proxy. Required-features
+list and validation greps are in `../generate-scraper/references/frameworks.md` Section
+E.2 and E.3 — read those before assembling, run the greps before declaring done.
+
+#### `<slug>/package.json`
+
+```json
+{
+  "name": "<slug>",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "crawl": "node src/crawler.js",
+    "scrape": "node src/scraper.js"
+  },
+  "dependencies": {
+    "crawlee": "^3.0.0"
+  }
+}
+```
+
+(If browser transport — `PlaywrightCrawler` — was selected in S-Crawlee-3 because the user
+asked for JS rendering, also add `"playwright": "^1.40.0"` and adjust `src/crawler.js` /
+`src/scraper.js` accordingly.)
+
+#### `<slug>/src/proxy.js`
+
+Helper module that builds the proxy URL or `ProxyConfiguration`. Contents come from
+S-Crawlee-3 (live docs). For HTTP transport (default), this module exports
+`buildProxyUrl(targetUrl)` and `PROXY_BASE_URL`. For browser transport, it exports
+`createProxyConfig()` returning a `ProxyConfiguration` instance.
+
+Reference template (HTTP — Proxy API Aggregator): see fallback in
+`../generate-scraper/references/frameworks.md` Section B.3 (`src/proxy.js`).
+
+#### `<slug>/src/crawler_extractor.js`
+
+Pastes `crawler_parser_cheerio_body` and exports it:
+
+```javascript
+// crawler_parser_cheerio_body — returned by Go backend with target_library: "cheerio".
+export function extract_data($, baseUrl) {
+  // ... body from crawler_parser_cheerio_body ...
+}
+```
+
+#### `<slug>/src/product_extractor.js`
+
+Same shape, with `product_parser_cheerio_body`.
+
+#### `<slug>/src/router.js`
+
+Single shared router with two named handlers (`LISTING`, `PRODUCT`) — even though the two
+spiders run as separate processes, route through the router for clean separation of
+extraction vs. orchestration. Use `createCheerioRouter()` (or `createPlaywrightRouter()`
+if browser transport):
+
+```javascript
+import { createCheerioRouter, Dataset } from "crawlee";
+import { extract_data as extract_listing } from "./crawler_extractor.js";
+import { extract_data as extract_product } from "./product_extractor.js";
+
+export const router = createCheerioRouter();
+
+router.addHandler("LISTING", async ({ $, request, log }) => {
+  // … extract_listing($, request.userData.originalUrl), enqueue products + next page
+});
+
+router.addHandler("PRODUCT", async ({ $, request, pushData, log }) => {
+  const data = extract_product($, request.userData.originalUrl) || {};
+  await pushData({ url: request.userData.originalUrl, ...data });
+});
+
+router.addDefaultHandler(async ({ request, log }) => {
+  log.warning(`Unrouted request: ${request.url}`);
+});
+```
+
+#### `<slug>/src/crawler.js`
+
+Entrypoint that crawls the listing page, follows pagination to `--max-pages`, and writes
+discovered URLs to a JSONL file. Use `CheerioCrawler` (HTTP) with `requestHandler: router`,
+`preNavigationHooks` that rewrites `request.url` through Proxy API,
+`useSessionPool: true`, `sessionPoolOptions: { maxPoolSize: 100 }`,
+`failedRequestHandler` that writes to a `failed` Dataset, and `maxConcurrency: <CONCURRENCY>`.
+Reference template: `../generate-scraper/references/frameworks.md` Section B.4
+(`src/crawler.js`).
+
+CLI:
+```bash
+node src/crawler.js --listing-url "<URL>" --max-pages <N> --output urls.jsonl
+```
+
+The `LISTING` router handler should:
+- Call `extract_data($, request.userData.originalUrl)` (NOT `request.loadedUrl` — that's
+  the rewritten proxy URL with `?api_key=...&url=...`; we want the original target URL).
+- For each `data.products[].url`, write a JSONL line `{ url, productId, name, discoveredOnPage }`.
+- If `data.pagination.nextPageUrl` is set and `page < maxPages`, push the next page via
+  `crawler.addRequests([{ url, label: "LISTING", userData: { page: page + 1, originalUrl: nextUrl } }])`.
+
+#### `<slug>/src/scraper.js`
+
+Entrypoint that reads a JSONL of URLs and writes a JSONL of full product objects. Same
+config as crawler: `requestHandler: router`, `preNavigationHooks`, `useSessionPool: true`,
+`sessionPoolOptions`, `failedRequestHandler`, `maxConcurrency: <CONCURRENCY>`. Pushes
+`{ url, label: "PRODUCT", userData }` per JSONL line.
+
+CLI:
+```bash
+node src/scraper.js --urls-file urls.jsonl --concurrency <N> --output products.jsonl
+```
+
+The `PRODUCT` router handler calls `extract_data($, request.userData.originalUrl)` and
+`pushData(...)`. The scraper script writes one JSONL line per Dataset entry on shutdown
+(or streams from the dataset, your call — both work).
+
+#### `<slug>/.gitignore`
+
+```
+node_modules/
+storage/
+*.jsonl
+```
+
+#### Also write
+
+- `<slug>/crawler_schema.json` — copy the schema produced in S-Crawlee-1.
+- `<slug>/product_schema.json` — copy the schema produced in S-Crawlee-4.
+
+#### Final validation before moving to S-Crawlee-7
+
+Two grep passes, both required:
+
+**1) Transport-purity grep** — must return zero matches:
+
+```bash
+grep -rE "require\(['\"]axios['\"]\)|from ['\"]axios['\"]|require\(['\"]https?['\"]\)" <slug>/src/
+```
+
+If anything shows up, fix it before the smoke test (Crawlee owns transport).
+
+**2) Native-features grep** — each line below must NOT print `MISSING:`:
+
+```bash
+grep -rE 'createCheerioRouter|createPlaywrightRouter' <slug>/src/ || echo "MISSING: router"
+grep -rE 'useSessionPool\s*:\s*true' <slug>/src/ || echo "MISSING: session pool"
+grep -rE 'failedRequestHandler' <slug>/src/ || echo "MISSING: failedRequestHandler"
+grep -rE 'maxConcurrency' <slug>/src/ || echo "MISSING: maxConcurrency"
+grep -rE 'preNavigationHooks' <slug>/src/ || echo "MISSING: proxy hooks"
+```
+
+Reference list of required features: `../generate-scraper/references/frameworks.md` Section E.2.
+
+### S-Crawlee-7 — Install deps + smoke test + local self-heal
+
+```bash
+cd <slug>
+npm install
+export SCRAPEOPS_API_KEY=<value pasted by user when prompted — NEVER read from ~/.claude/settings.json>
+
+# Smoke test crawler — max-pages=1 for speed
+node src/crawler.js --listing-url "<LISTING_URL>" --max-pages 1 --output smoke_urls.jsonl
+```
+
+Validate `smoke_urls.jsonl`: file exists, has ≥1 line, first line is JSON with `url`
+starting with `http`, domain matches `LISTING_URL`.
+
+If broken, invoke `parser-fixer`:
+
+```
+Agent(
+  subagent_type: "parser-fixer",
+  description: "Fix Crawlee crawler",
+  prompt: "The Crawlee project at <slug> runs but produces bad output from the listing crawl.
+
+Inputs:
+- project_path: <slug>
+- parser_path: <slug>/src/crawler_extractor.js
+- html_path: fetch fresh listing HTML via scrapeops_fetch_html and save to /tmp/<slug>_listing.html
+- language: javascript
+- task: Crawler extract_data($, baseUrl) returns no products / wrong URLs / wrong fields.
+
+Run command: cd <slug> && node src/crawler.js --listing-url \"<LISTING_URL>\" --max-pages 1 --output /tmp/<slug>_smoke_urls.jsonl
+
+CRITICAL: keep the project Cheerio-only. Do NOT add `axios`, `node-fetch`, `require('https')`,
+or any hand-rolled HTTP client — Crawlee owns transport. Only the Cheerio `$` API is
+allowed in the extractor. Verify with grep before finishing."
+)
+```
+
+Then smoke test the scraper:
+
+```bash
+head -1 smoke_urls.jsonl > smoke_one.jsonl
+node src/scraper.js --urls-file smoke_one.jsonl --output smoke_products.jsonl
+```
+
+Validate ≥1 line with valid JSON containing core product fields. Same `parser-fixer`
+fallback against `<slug>/src/product_extractor.js` if broken.
+
+### S-Crawlee-8 — Final summary (Crawlee flavor)
+
+Show:
+
+```
+✓ Crawlee project built successfully!
+
+Directory: ./<slug>/
+  ├── package.json
+  ├── README.md
+  ├── crawler_schema.json
+  ├── product_schema.json
+  └── src/
+      ├── proxy.js               — ScrapeOps Proxy API URL builder
+      ├── crawler_extractor.js   — extract_data($, baseUrl) for listing pages
+      ├── product_extractor.js   — extract_data($, baseUrl) for product pages
+      ├── crawler.js             — listing → product URLs (JSONL)
+      └── scraper.js             — product URLs → full details (JSONL)
+
+This project is 100% Crawlee — no axios, no hand-rolled HTTP.
+Selected proxy: <Proxy API Aggregator | Residential & Mobile Proxy Aggregator> — <reason>.
+
+Setup:
+  cd <slug>
+  npm install
+  export SCRAPEOPS_API_KEY=<your key>   # required — proxy is enabled by default
+
+Three ways to run it:
+
+1) Crawler only:
+   node src/crawler.js --listing-url "<LISTING_URL>" --max-pages <max_pages> --output urls.jsonl
+
+2) Scraper only (needs urls.jsonl from step 1):
+   node src/scraper.js --urls-file urls.jsonl --concurrency <CONCURRENCY> --output products.jsonl
+
+3) Both chained:
+   node src/crawler.js --listing-url "<LISTING_URL>" --max-pages <max_pages> --output urls.jsonl && \
+     node src/scraper.js --urls-file urls.jsonl --concurrency <CONCURRENCY> --output products.jsonl
+
+Concurrency is controlled by `maxConcurrency` in src/crawler.js and src/scraper.js
+(currently <CONCURRENCY>, matching the ScrapeOps plan limit).
+```
+
+### S-Crawlee-9 — Generate README.md (Crawlee flavor)
+
+Write `<slug>/README.md`. Structure mirrors the Scrapy README (S9) but for Node:
+
+- **Project summary** — `<domain>` Crawlee crawler + scraper, generated by
+  `/generate-crawler-scraper` on `<date>`.
+- **Metadata** — listing URL, search query, language=JavaScript, library=Crawlee
+  (Cheerio transport by default, or Playwright if browser was chosen), max_pages default,
+  concurrency, date, **selected proxy product** (Proxy API Aggregator vs Residential).
+- **Files in this directory** — table listing each file with a 1-line description.
+- **Prerequisites** — Node 18+. Show `npm install`. Show `export SCRAPEOPS_API_KEY=<your-key>`.
+- **How to run** — three options (crawler only, scraper only, chained).
+- **Customizing**:
+  - Change search URL → `--listing-url` flag.
+  - More pages → `--max-pages N`.
+  - More concurrency → `--concurrency N` on the scraper, never above the ScrapeOps cap.
+  - Change extracted fields → edit `src/crawler_extractor.js` / `src/product_extractor.js`.
+  - Disable proxy → comment out the `preNavigationHooks` block in `src/crawler.js` /
+    `src/scraper.js`.
+- **Troubleshooting** — same items as Scrapy README plus "verify SCRAPEOPS_API_KEY is
+  exported and `src/proxy.js` returns the rewritten URL".
+- **How it works** — brief: crawler runs `CheerioCrawler` against the listing URL via the
+  ScrapeOps proxy, extracts product URLs and pagination using native Cheerio `$`, writes
+  JSONL; scraper reads JSONL, fetches each URL via proxy, extracts full product object.
+
+**Important**:
+- Do NOT mention `axios` anywhere. The project has no axios.
+- Do NOT show absolute paths — keep instructions relative to `<slug>/`.
+
+---
+
+## Framework Mode notes
+
+- **Never** mix Framework Mode with the standalone-script mode. If the user picks
+  `library=scrapy` or `library=crawlee`, all output lives inside the framework project dir.
+- **ScrapeOps proxy is ON by default.** Tell the user they need
+  `export SCRAPEOPS_API_KEY=...` before running. To bypass the proxy, they comment out
+  the middleware entry (Scrapy `settings.py`) or the `preNavigationHooks` block (Crawlee
+  `src/crawler.js` / `src/scraper.js`).
+- **Always consult ScrapeOps proxy docs at runtime** (S3 / S-Crawlee-3). The offline
+  reference `../generate-scraper/references/proxies.md` is fallback only.
+- **DO call `scrapeops_get_concurrency_limit`** — `CONCURRENT_REQUESTS` (Scrapy) or
+  `maxConcurrency` (Crawlee) respects the plan cap.
+- **Zero BS4 (Scrapy) or axios (Crawlee) in the generated project.** If the final grep
+  matches anywhere, the skill is broken and must re-run the conversion / strip step.
+- **Framework docs are the source of truth**, not SKILL.md. If Scrapy renames a setting or
+  Crawlee changes a handler argument, you pick that up on the next run via S2 /
+  S-Crawlee-2 fetches. No need to manually sync this skill.
+- **Fallback templates exist** (Scrapy: appendix below; Crawlee:
+  `../generate-scraper/references/frameworks.md` Section B) for when the framework or
+  proxy docs are unreachable. Use only when fetches fail. Warn the user when falling back.
+- **Fix-scraper path**: for local self-heal, invoke the `parser-fixer` agent DIRECTLY
+  (not the `/fix-scraper` skill). Pass `project_path=<slug>` and the specific extractor
+  file as `parser_path`. The agent must NOT reintroduce BS4 / axios — make that explicit
+  in the prompt.
 
 ---
 
@@ -1169,7 +1709,9 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 ITEM_PIPELINES = {
-    "<project_pkg>.pipelines.JsonLinesPipeline": 300,
+    "<project_pkg>.pipelines.ValidationPipeline": 100,
+    "<project_pkg>.pipelines.DuplicatesPipeline": 200,
+    "<project_pkg>.pipelines.NormalizationPipeline": 300,
 }
 
 CONCURRENT_REQUESTS = <CONCURRENCY>
@@ -1178,6 +1720,13 @@ DOWNLOAD_TIMEOUT = 60
 RETRY_TIMES = 3
 RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 DOWNLOAD_DELAY = 0
+
+AUTOTHROTTLE_ENABLED = True
+AUTOTHROTTLE_START_DELAY = 1.0
+AUTOTHROTTLE_MAX_DELAY = 10.0
+AUTOTHROTTLE_TARGET_CONCURRENCY = <CONCURRENCY>
+AUTOTHROTTLE_DEBUG = False
+
 ROBOTSTXT_OBEY = False
 LOG_LEVEL = "INFO"
 
@@ -1219,23 +1768,83 @@ class ScrapeOpsProxyMiddleware:
 </details>
 
 <details>
-<summary>Fallback: <code>pipelines.py</code></summary>
+<summary>Fallback: <code>pipelines.py</code> (three real pipelines — validation, dedup, normalization)</summary>
 
 ```python
-class JsonLinesPipeline:
-    """No-op hook. Scrapy's native -O <file>.jsonl handles the actual writing.
-    Kept here so we can plug in dedup / normalization later without touching settings."""
+import re
+from urllib.parse import urljoin
+
+from scrapy.exceptions import DropItem
+
+
+REQUIRED_FIELDS = ("url", "name")
+
+
+class ValidationPipeline:
+    """Drop items missing required fields."""
 
     def process_item(self, item, spider):
+        missing = [f for f in REQUIRED_FIELDS if not item.get(f)]
+        if missing:
+            raise DropItem(f"Missing required fields: {missing}")
+        return item
+
+
+class DuplicatesPipeline:
+    """Drop duplicate items by `url` (or `productId` if present)."""
+
+    def __init__(self):
+        self.seen = set()
+
+    def process_item(self, item, spider):
+        key = item.get("productId") or item.get("url")
+        if key and key in self.seen:
+            raise DropItem(f"Duplicate item dropped: {key}")
+        if key:
+            self.seen.add(key)
+        return item
+
+
+class NormalizationPipeline:
+    """Whitespace cleanup, URL resolution, light type coercion for prices."""
+
+    _ws_re = re.compile(r"\s+")
+
+    def process_item(self, item, spider):
+        for key, value in list(item.items()):
+            if isinstance(value, str):
+                item[key] = self._ws_re.sub(" ", value).strip()
+
+        # Resolve relative URLs against the source URL stored in meta (if any).
+        source = (getattr(spider, "_last_source_url", None)
+                  or item.get("discoveredFromListing"))
+        if source and item.get("url") and not item["url"].startswith("http"):
+            item["url"] = urljoin(source, item["url"])
+
+        # Coerce price-like fields to float.
+        for k in ("price", "originalPrice"):
+            v = item.get(k)
+            if isinstance(v, str):
+                m = re.search(r"-?\d+(?:[\.,]\d+)?", v)
+                if m:
+                    try:
+                        item[k] = float(m.group(0).replace(",", "."))
+                    except ValueError:
+                        pass
         return item
 ```
 </details>
 
 <details>
-<summary>Fallback: <code>items.py</code> skeleton</summary>
+<summary>Fallback: <code>items.py</code> skeleton (Item + ItemLoader subclass)</summary>
 
 ```python
 import scrapy
+from itemloaders.processors import TakeFirst, MapCompose, Join, Identity
+
+
+def _strip(v):
+    return v.strip() if isinstance(v, str) else v
 
 
 class ProductItem(scrapy.Item):
@@ -1253,6 +1862,22 @@ class ProductItem(scrapy.Item):
     features = scrapy.Field()
     availability = scrapy.Field()
     seller = scrapy.Field()
+
+
+class ProductLoader(scrapy.loader.ItemLoader):
+    """Centralizes per-field cleanup so spiders stay small."""
+
+    default_output_processor = TakeFirst()
+    default_input_processor = MapCompose(_strip)
+
+    # List-shaped fields keep their list shape:
+    images_out = Identity()
+    reviews_out = Identity()
+    features_out = Identity()
+    specifications_out = Identity()
+
+    # Joined-text fields get concatenated with spaces:
+    description_out = Join(" ")
 ```
 </details>
 
@@ -1324,11 +1949,11 @@ class CrawlerSpider(scrapy.Spider):
 import json
 import scrapy
 
-from <project_pkg>.items import ProductItem
+from <project_pkg>.items import ProductItem, ProductLoader
 
 
-# <product_parser_scrapy_body> — the Scrapy-pure extract_data(response) from S5.
-# NEVER paste the BS4 version here.
+# <product_parser_scrapy_body> — the Scrapy-pure extract_data(response, base_url) from S5.
+# Mixes response.css(...) and response.xpath(...). NEVER paste the BS4 version here.
 <product_parser_scrapy_body>
 
 
@@ -1358,13 +1983,17 @@ class ProductSpider(scrapy.Spider):
                     yield scrapy.Request(url, callback=self.parse_product, meta={"source_url": url})
 
     def parse_product(self, response):
-        data = extract_data(response) or {}
-        data["url"] = response.meta.get("source_url") or response.url
-        item = ProductItem()
-        for key, value in data.items():
-            if key in item.fields:
-                item[key] = value
-        yield item
+        source_url = response.meta.get("source_url") or response.url
+        self._last_source_url = source_url  # consumed by NormalizationPipeline for URL resolution
+        raw = extract_data(response, source_url) or {}
+        loader = ProductLoader(item=ProductItem(), response=response)
+        loader.add_value("url", source_url)
+        for key, value in raw.items():
+            if key == "url":
+                continue
+            if key in ProductItem.fields:
+                loader.add_value(key, value)
+        yield loader.load_item()
 ```
 </details>
 
