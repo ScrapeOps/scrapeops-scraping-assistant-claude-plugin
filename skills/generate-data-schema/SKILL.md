@@ -25,7 +25,8 @@ This skill has two usage modes:
 
 ### Known presets (`target_page_type`)
 
-- `product_crawler` — slim schema for a **listing/search/category** page. Extracts `products[].url` + `pagination.nextPageUrl`. Use this for crawlers.
+- `product_crawler` — slim schema for a **listing/category** page used when the goal is to discover product URLs and pass them to a separate detail-page scraper. Extracts `products[].url` + `pagination.nextPageUrl`. Use this for crawlers.
+- `product_search_page` — schema for a **search results page** scraped directly (no follow-up to detail pages). Extracts the data visible on each result card: `products[].{url, name, price, image, rating, ...}` + pagination. Used by `generate-scraper` Search Page Mode.
 - `product` — full schema for a **product detail page**. Extracts name, price, brand, images, reviews, specifications, features, availability, etc.
 
 Preset files live in `presets/` relative to this SKILL.md (sibling directory).
@@ -46,7 +47,7 @@ Preset files live in `presets/` relative to this SKILL.md (sibling directory).
 
 Read the preset JSON from `<skill-dir>/presets/<target_page_type>.json`. Use the **Read** tool. The preset is already in the exact Go format — this is the starting point.
 
-If the preset doesn't exist for the given `target_page_type`, stop and report: *"No preset available for '<X>'. Supported presets: product_crawler, product."*
+If the preset doesn't exist for the given `target_page_type`, stop and report: *"No preset available for '<X>'. Supported presets: product_crawler, product_search_page, product."*
 
 ---
 
@@ -92,7 +93,8 @@ Quick self-checks before writing:
 2. `required` is present on every field (bool).
 3. Arrays have `items`; objects have `properties`.
 4. For `product_crawler`: `products[].url` must be `required: true` and `priority_level: "critical"`.
-5. For `product`: at least `name` and `url` must be `required: true, priority_level: "critical"`.
+5. For `product_search_page`: `products[].url` AND `products[].name` must both be `required: true, priority_level: "critical"`.
+6. For `product`: at least `name` and `url` must be `required: true, priority_level: "critical"`.
 
 If any check fails, fix in place. Never emit an invalid schema.
 
