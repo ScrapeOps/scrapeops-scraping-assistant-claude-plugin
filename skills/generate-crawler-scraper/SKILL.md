@@ -386,6 +386,196 @@ Run:
 
 If the command fails (non-zero exit, runner not installed, or "SCRAPEOPS_API_KEY is empty" error), show stderr and **do NOT** continue to Step 8. Offer the user two options: (1) fix the runner/env and retry manually; (2) skip execution and move on.
 
+> 🚨 **Before running the crawler, do Step 7.5 first.** Step 7.5 parameterizes the
+> hardcoded listing URL into CLI flags (`--keywords`, `--max-pages`, etc.) when the
+> URL is a search page. The runner command above (`<runner> "<LISTING_URL>" --max-pages
+> ...`) only works AFTER Step 7.5 has refactored the script. Without Step 7.5, the
+> Go backend's verbatim crawler has the search query hardcoded inside the file and the
+> CLI args don't exist yet.
+
+---
+
+## Step 7.5 — 🚨 MANDATORY: Parameterize hardcoded search URL into CLI flags
+
+**This step is REQUIRED for every standard-mode crawler whose `LISTING_URL` is a search
+page.** The Go backend returns a script with `urls = ["<LISTING_URL>"]` hardcoded near
+the bottom. For search-style URLs that's broken UX — the user cannot change the search
+query without editing the source file. This step refactors the script so the keyword,
+pagination, and other filters become CLI flags.
+
+**Skip Step 7.5** only when the LISTING_URL is NOT a search page (e.g. a static
+category path like `/c/electronics` with no query string and no `/search` segment).
+
+### 7.5.1 — Detect: is the LISTING_URL a search page?
+
+Run the same heuristic as `generate-scraper` Step 1.5:
+
+```bash
+SEARCH_URL_REGEX='[?&](k|q|query|search|s|term|kw|keywords?)=[^&]+'
+SEARCH_PATH_REGEX='/(search|s|busca|find|results)(/|\?|$)'
+echo "<LISTING_URL>" | grep -E "$SEARCH_URL_REGEX|$SEARCH_PATH_REGEX"
+```
+
+If neither regex matches, **skip the rest of Step 7.5** (the hardcoded URL is fine for
+a static listing) and continue to the runner command in Step 7. If either matches,
+continue with 7.5.2.
+
+### 7.5.2 — Parse the URL structure
+
+Use Python via Bash (works regardless of the script's language):
+
+```bash
+python3 - <<'PY'
+from urllib.parse import urlsplit, parse_qsl
+u = urlsplit("<LISTING_URL>")
+print("base:", f"{u.scheme}://{u.netloc}{u.path}")
+print("params:", list(parse_qsl(u.query, keep_blank_values=True)))
+PY
+```
+
+Extract:
+- `KEYWORD_PARAM` — the query param matching the search regex (`k`, `q`, `query`, `s`,
+  `search`, `term`, `kw`, `keyword`, `keywords`). Take the FIRST match.
+- `KEYWORD_VALUE_DEFAULT` — its current value (becomes the CLI default).
+- `PAGINATION_PARAM` — try `start`, `page`, `p`, `offset`, `from`. If present, note it.
+- `PAGINATION_KIND` — `page-number` (1, 2, 3) or `offset-based` (0, 10, 20, 25, 50).
+  Heuristic: if the original value is small (≤50), assume `page-number`. Otherwise check
+  if it looks like `N * page_size` (Indeed uses `start=10, 20, 30...` with size 10).
+- `PAGE_SIZE` — only meaningful when `offset-based`. Common: 10, 20, 24, 25, 48.
+- `OTHER_QUERY_PARAMS` — every other param. They become FIXED filter values inside the
+  refactored URL builder (preserve them verbatim, the user keeps controlling them by
+  editing the original URL or via subsequent edits).
+
+### 7.5.3 — Refactor the saved crawler script
+
+Use **Edit** to replace the hardcoded `urls = [...]` block (and add CLI parsing) at the
+bottom of `<slug>_crawler.<ext>`. The refactor is language-specific.
+
+**Python** — find the `if __name__ == "__main__":` block (or equivalent entry point) and
+replace it with:
+
+```python
+import argparse
+from urllib.parse import urlencode
+
+# === Search-URL parameterization (added by generate-crawler-scraper plugin) ===
+SEARCH_URL_BASE = "<scheme>://<netloc><path>"        # e.g. "https://www.indeed.com/jobs"
+KEYWORD_PARAM = "<KEYWORD_PARAM>"                    # e.g. "q"
+PAGINATION_PARAM = "<PAGINATION_PARAM>"              # e.g. "start"; "" if none
+PAGINATION_KIND = "<page-number|offset-based>"
+PAGE_SIZE = <PAGE_SIZE_OR_0>                         # used only when offset-based
+FIXED_PARAMS = <OTHER_QUERY_PARAMS_DICT_LITERAL>     # e.g. {"l": ""}
+DEFAULT_KEYWORDS = ["<KEYWORD_VALUE_DEFAULT>"]       # may be overridden via --keywords
+
+
+def build_search_url(keyword, page=1):
+    params = {KEYWORD_PARAM: keyword, **FIXED_PARAMS}
+    if PAGINATION_PARAM:
+        if PAGINATION_KIND == "offset-based":
+            params[PAGINATION_PARAM] = (page - 1) * (PAGE_SIZE or 1)
+        else:
+            params[PAGINATION_PARAM] = page
+    return f"{SEARCH_URL_BASE}?{urlencode(params)}"
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description="Crawl <domain> search results")
+    ap.add_argument("--keywords", help="Comma-separated keywords (overrides default)")
+    ap.add_argument("--max-pages", type=int, default=1, help="Pages per keyword")
+    ap.add_argument("--output", default=None, help="Output JSONL path (default: timestamped)")
+    args = ap.parse_args()
+
+    keywords = (
+        [k.strip() for k in args.keywords.split(",") if k.strip()]
+        if args.keywords else DEFAULT_KEYWORDS
+    )
+    urls = [build_search_url(kw, page)
+            for kw in keywords
+            for page in range(1, args.max_pages + 1)]
+
+    logger.info(f"Crawling {len(urls)} URL(s) — {len(keywords)} keyword(s) × {args.max_pages} page(s)")
+    concurrent_scraping(urls, max_threads=2, max_retries=3, output_file=args.output)
+    logger.info("Crawling complete.")
+```
+
+Make sure `import argparse` and `from urllib.parse import urlencode` are at the top
+(add to existing imports if missing). The function `concurrent_scraping` already exists
+in the Go-emitted code; just call it with the new URL list. If its signature differs
+slightly (e.g. doesn't accept `output_file`), adapt the call accordingly — but do NOT
+rewrite the rest of the file. Selectors, dataclasses, pipeline class etc. all stay
+verbatim from the backend.
+
+**JavaScript** — same idea with `process.argv` parsing and a `URLSearchParams`
+URL builder. Replace the bottom-of-file URL list with:
+
+```javascript
+function parseArgs(argv) {
+  const args = {};
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) { args[argv[i].slice(2)] = argv[i + 1]; i++; }
+  }
+  return args;
+}
+
+const SEARCH_URL_BASE = "<scheme>://<netloc><path>";
+const KEYWORD_PARAM = "<KEYWORD_PARAM>";
+const PAGINATION_PARAM = "<PAGINATION_PARAM>"; // empty string if no pagination
+const PAGINATION_KIND = "<page-number|offset-based>";
+const PAGE_SIZE = <PAGE_SIZE_OR_0>;
+const FIXED_PARAMS = <OTHER_QUERY_PARAMS_OBJECT_LITERAL>;
+const DEFAULT_KEYWORDS = ["<KEYWORD_VALUE_DEFAULT>"];
+
+function buildSearchUrl(keyword, page = 1) {
+  const params = new URLSearchParams({ [KEYWORD_PARAM]: keyword, ...FIXED_PARAMS });
+  if (PAGINATION_PARAM) {
+    const value = PAGINATION_KIND === "offset-based"
+      ? String((page - 1) * (PAGE_SIZE || 1))
+      : String(page);
+    params.set(PAGINATION_PARAM, value);
+  }
+  return `${SEARCH_URL_BASE}?${params.toString()}`;
+}
+
+const args = parseArgs(process.argv);
+const keywords = args.keywords
+  ? args.keywords.split(",").map(k => k.trim()).filter(Boolean)
+  : DEFAULT_KEYWORDS;
+const maxPages = parseInt(args["max-pages"] ?? "1", 10);
+const urls = [];
+for (const kw of keywords) for (let p = 1; p <= maxPages; p++) urls.push(buildSearchUrl(kw, p));
+
+// Then call whatever the backend named the entrypoint, passing `urls` and `args.output`.
+```
+
+**Other languages (PHP, Ruby, Go, Rust, Java, C#)** — the standard mode rarely emits
+crawlers in these for search pages. If the user does pick one of them and it's a search
+URL, do a smaller refactor: replace just the hardcoded URL with one read from
+`process.argv[1]` / `ARGV[0]` / `os.Args[1]` / etc., and document in the README that
+keyword switching requires re-running the script with a different argument. Mention this
+limitation explicitly in the README.
+
+### 7.5.4 — Verify the refactor
+
+Run a quick syntax check via Bash before moving on:
+
+- Python: `python3 -m py_compile <slug>_crawler.py` (should exit 0)
+- JavaScript: `node --check <slug>_crawler.js` (should exit 0)
+
+If either fails, show the error and adjust. Do NOT proceed to running the crawler with a
+broken file.
+
+### 7.5.5 — Updated runner command (use this from now on)
+
+After Step 7.5, the runner command from Step 7 becomes:
+
+```
+<runner> --keywords "<KEYWORD_VALUE_DEFAULT>" --max-pages <max_pages> --output <slug>_urls.jsonl
+```
+
+NOT `<runner> "<LISTING_URL>" ...`. The script no longer accepts a positional URL — it
+builds URLs from `--keywords` and `--max-pages` against `SEARCH_URL_BASE` baked in at
+generation time.
+
 ---
 
 ## Step 8 — Validate the JSONL + local self-heal if needed
@@ -412,8 +602,8 @@ Inputs:
 - language: <language>
 - task: Crawler is not producing valid product URLs. Expected: JSONL with one {\"url\": ...} per product, each URL absolute and on the same domain as the listing. Got: <short description of what was wrong — empty output / invalid JSON / missing url field / wrong domain>.
 
-The parser is invoked as: <runner> <slug>_crawler.<ext> \"<LISTING_URL>\" --max-pages 1 --output /tmp/<slug>_urls_test.jsonl
-Verify by running it and checking the output JSONL. Iterate selector edits until the JSONL has >= 1 valid URL line. Do NOT touch the hardcoded API_KEY = \"...\" line."
+The parser is invoked as: <runner> <slug>_crawler.<ext> --keywords \"<KEYWORD_VALUE_DEFAULT>\" --max-pages 1 --output /tmp/<slug>_urls_test.jsonl (if Step 7.5 ran), OR <runner> <slug>_crawler.<ext> \"<LISTING_URL>\" --max-pages 1 --output /tmp/<slug>_urls_test.jsonl (if Step 7.5 was skipped because the URL was not a search page).
+Verify by running it and checking the output JSONL. Iterate selector edits until the JSONL has >= 1 valid URL line. Do NOT touch the SCRAPEOPS_API_KEY env-var read. Do NOT touch the Step 7.5 parameterization block (SEARCH_URL_BASE, KEYWORD_PARAM, build_search_url, the argparse setup) — only edit selectors inside extract_data."
    )
    ```
    The parser-fixer agent reads the parser, runs it via Bash locally, greps the HTML, edits the code, and iterates — **100% on the user's machine**. No calls to the Go backend, no Agent Service.
@@ -536,17 +726,22 @@ Max pages crawled: <max_pages>
 
 Before running: `export SCRAPEOPS_API_KEY=<your key>` (required — the scripts read the key from the env var).
 
-Three ways to run it:
+Three ways to run it (assumes Step 7.5 parameterization ran — the crawler accepts
+`--keywords`. If the listing URL was a static category and Step 7.5 was skipped, drop the
+`--keywords` flag from the commands below — the URL is baked in):
 
 1) Step 1 — crawler only (discover product URLs):
-  <runner> <slug>_crawler.<ext> "<LISTING_URL>" --max-pages <max_pages> --output <slug>_urls.jsonl
+  <runner> <slug>_crawler.<ext> --keywords "<KEYWORD_VALUE_DEFAULT>" --max-pages <max_pages> --output <slug>_urls.jsonl
 
 2) Step 2 — scraper only (needs urls.jsonl from step 1):
   <runner> <slug>_scraper.<ext> <slug>_urls.jsonl --concurrency <CONCURRENCY> --output <slug>_products.jsonl
 
 3) Both at once (chained — most common):
-  <runner> <slug>_crawler.<ext> "<LISTING_URL>" --max-pages <max_pages> --output <slug>_urls.jsonl && \
+  <runner> <slug>_crawler.<ext> --keywords "<KEYWORD_VALUE_DEFAULT>" --max-pages <max_pages> --output <slug>_urls.jsonl && \
     <runner> <slug>_scraper.<ext> <slug>_urls.jsonl --concurrency <CONCURRENCY> --output <slug>_products.jsonl
+
+To run with a different keyword, just change the value:
+  <runner> <slug>_crawler.<ext> --keywords "data engineer" --max-pages 3
 ```
 
 Optionally display the smoke-test JSON inline so the user can see what a product record looks like.
@@ -616,15 +811,30 @@ Both `<slug>_crawler.<ext>` and `<slug>_scraper.<ext>` look up this env var at r
 
 ### Option 1 — Crawler only
 
-Discover product URLs from a listing page and write them to a JSONL file:
+Discover product URLs and write them to a JSONL file. **Behavior depends on whether
+the listing URL was a search page (Step 7.5 ran) or a static listing (Step 7.5 skipped):**
+
+**If Step 7.5 ran (search page — most common):** the crawler accepts CLI flags for the
+keyword and pagination — change them at runtime without editing the source:
 
 ```
-<runner> <slug>_crawler.<ext> "<LISTING_URL>" --max-pages <max_pages> --output <slug>_urls.jsonl
+<runner> <slug>_crawler.<ext> --keywords "<KEYWORD_VALUE_DEFAULT>" --max-pages <max_pages> --output <slug>_urls.jsonl
+
+# Try a different keyword:
+<runner> <slug>_crawler.<ext> --keywords "data engineer" --max-pages 3
+
+# Multiple keywords in one run (comma-separated):
+<runner> <slug>_crawler.<ext> --keywords "software engineer,data scientist,product manager" --max-pages 2
 ```
 
 Flags:
-- `--max-pages N` — stop after N pagination pages (default `<max_pages>`)
-- `--output FILE` — where to write the JSONL (default `urls.jsonl`)
+- `--keywords STRING` — single keyword OR comma-separated list. Default: `<KEYWORD_VALUE_DEFAULT>` (the keyword from the URL passed at generation time).
+- `--max-pages N` — stop after N pagination pages PER KEYWORD (default `<max_pages>`).
+- `--output FILE` — where to write the JSONL (default: timestamped filename).
+
+**If Step 7.5 was skipped (static listing URL):** the crawler accepts only `--max-pages`
+and `--output`; the URL is baked in. To change the listing target, edit the `urls = [...]`
+list near the bottom of `<slug>_crawler.<ext>` directly.
 
 ### Option 2 — Scraper only
 
@@ -640,10 +850,16 @@ Flags:
 
 ### Option 3 — Full flow (crawler + scraper chained)
 
-Run both in one command (most common usage):
+Run both in one command (most common usage). Use the appropriate crawler invocation
+depending on whether Step 7.5 ran:
 
 ```
-<runner> <slug>_crawler.<ext> "<LISTING_URL>" --max-pages <max_pages> --output <slug>_urls.jsonl && \
+# Search-page crawler (Step 7.5 ran):
+<runner> <slug>_crawler.<ext> --keywords "<KEYWORD_VALUE_DEFAULT>" --max-pages <max_pages> --output <slug>_urls.jsonl && \
+  <runner> <slug>_scraper.<ext> <slug>_urls.jsonl --concurrency <CONCURRENCY> --output <slug>_products.jsonl
+
+# Static-listing crawler (Step 7.5 skipped):
+<runner> <slug>_crawler.<ext> --max-pages <max_pages> --output <slug>_urls.jsonl && \
   <runner> <slug>_scraper.<ext> <slug>_urls.jsonl --concurrency <CONCURRENCY> --output <slug>_products.jsonl
 ```
 
@@ -653,7 +869,15 @@ This writes:
 
 ## Customizing
 
-- **Change the search URL / query**: edit the first argument to the crawler (e.g. `"https://<domain>/search?q=<new query>"`).
+- **Change the search keyword (Step 7.5 ran)**: pass `--keywords "<new query>"` on the
+  crawler — no source edit needed. Comma-separate multiple keywords to crawl them all in
+  one run. The default in the source can be changed by editing `DEFAULT_KEYWORDS` at the
+  bottom of `<slug>_crawler.<ext>`.
+- **Change the listing URL (Step 7.5 skipped)**: edit the `urls = [...]` list near the
+  bottom of `<slug>_crawler.<ext>`.
+- **Change other filters baked in from the original URL** (e.g. location, sort): edit the
+  `FIXED_PARAMS` dict near the bottom of `<slug>_crawler.<ext>` (only present when
+  Step 7.5 ran).
 - **More pages**: `--max-pages 10` on the crawler.
 - **More concurrency**: `--concurrency <N>` on the scraper (never exceed your ScrapeOps plan limit).
 - **Change what's extracted**: edit `crawler_schema.json` / `product_schema.json`, then either re-run `/generate-crawler-scraper` from scratch or pass the schema to `/fix-scraper` for incremental edits to the existing parser.
