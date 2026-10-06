@@ -221,7 +221,7 @@ After each call:
 - Show: `[Poll #N] <_summary field from response>`
 - `finished = false` → call `scrapeops_poll_status` again
 - `finished = true` and `outcome = "completed"` (`status = "completed"`) → proceed to Step 5
-- `finished = true` and `outcome = "failed"` → show `status` and `error_message` and stop. This covers every failure status (`failed`, `error`, `cancelled`, `expired`, `wrong_page_type`, `unsupported_schema`, `proxy_error`, `js_rendering_error`, `404_page`, `login_required`, `no_data_found`, and any new one). Do not resubmit the same URL: `login_required` means the page needs an account, `no_data_found` means the page had no data (ask the user for a URL that already shows the data, e.g. a search URL with the query in it).
+- `finished = true` and `outcome = "failed"` → show `status` and `error_message` and stop. This covers every failure status (`failed`, `error`, `cancelled`, `expired`, `wrong_page_type`, `unsupported_schema`, `proxy_error`, `js_rendering_error`, `404_page`, `login_required`, `no_data_found`, `unsupported_url`, and any new one). Do not resubmit the same URL: `login_required` means the page needs an account, `no_data_found` means the page had no data (ask the user for a URL that already shows the data, e.g. a search URL with the query in it).
 
 **CRITICAL — ONLY proceed when `status === "completed"`.** Never based on `completed_at` being set, never based on `_summary` text, never based on elapsed time. Only the literal string `"completed"` in the `status` field. `scrapeops_poll_status` intentionally does NOT return `output_code` / `link_output_code` — those are only available via `scrapeops_get_code` in Step 5.
 

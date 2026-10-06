@@ -502,7 +502,7 @@ const TOOLS = [
   {
     name: "scrapeops_poll_status",
     description:
-      "Wait 30 seconds then check job status. Call repeatedly while `finished` is false. When `finished` is true, `outcome` is 'completed' (call scrapeops_get_code) or 'failed' (show `error_message` to the user and stop; failure statuses include failed, error, cancelled, expired, wrong_page_type, unsupported_schema, proxy_error, js_rendering_error, 404_page, login_required, no_data_found). API key and URL are read from environment automatically. IMPORTANT: this tool intentionally STRIPS the generated code (output_code / link_output_code) from the response — the backend populates those fields before the pipeline is finished, which would otherwise tempt the caller to proceed with incomplete code. Use scrapeops_get_code AFTER status is 'completed' to retrieve the final code.",
+      "Wait 30 seconds then check job status. Call repeatedly while `finished` is false. When `finished` is true, `outcome` is 'completed' (call scrapeops_get_code) or 'failed' (show `error_message` to the user and stop; failure statuses include failed, error, cancelled, expired, wrong_page_type, unsupported_schema, proxy_error, js_rendering_error, 404_page, login_required, no_data_found, unsupported_url). API key and URL are read from environment automatically. IMPORTANT: this tool intentionally STRIPS the generated code (output_code / link_output_code) from the response — the backend populates those fields before the pipeline is finished, which would otherwise tempt the caller to proceed with incomplete code. Use scrapeops_get_code AFTER status is 'completed' to retrieve the final code.",
     inputSchema: {
       type: "object",
       properties: {
