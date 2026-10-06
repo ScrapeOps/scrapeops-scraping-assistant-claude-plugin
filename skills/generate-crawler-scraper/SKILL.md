@@ -272,16 +272,16 @@ Call **`scrapeops_submit_job`** with:
 
 Returns `{ version_id }`. Show: *"Crawler job submitted (version_id: <id>). Polling…"*.
 
-Then poll with **`scrapeops_poll_status`** (20s internal wait per call). Loop until `status === "completed"` OR an error/failure status. On each poll, print `[Poll #N] <_summary>`.
+Then poll with **`scrapeops_poll_status`** (20s internal wait per call). Loop while `finished` is false; stop when `finished` is true. On each poll, print `[Poll #N] <_summary>`.
 
 **CRITICAL — ONLY proceed when `status === "completed"`. Never anything else.**
 
-- The ONLY valid exit condition for the success path is `status === "completed"`. Not `status === "processing"`, not `status === "running"`, not `status === "queued"`, not `completed_at` being set, not the `_summary` mentioning "Return Code". **Look at the raw `status` field. If it is not the literal string `"completed"`, call `scrapeops_poll_status` again.** Note: `scrapeops_poll_status` intentionally does NOT return `output_code` or `link_output_code` — those fields only become available through `scrapeops_get_code` AFTER status is completed. So there's no way to "peek" at the code early.
-- If you see `status` values like `processing`, `running`, `queued`, `step_N`, `generating_*`, `refactoring`, `ai_fix_suggestions`, `agent_fix`, `re_execute_parser`, anything that is NOT the literal `"completed"` → loop and call `scrapeops_poll_status` again. Do NOT stop polling.
+- The ONLY valid exit condition for the success path is `status === "completed"`. Not `status === "processing"`, not `status === "running"`, not `status === "queued"`, not `completed_at` being set, not the `_summary` mentioning "Return Code". **Look at the raw `status` field: only the literal string `"completed"` is success. While `finished` is false, call `scrapeops_poll_status` again.** Note: `scrapeops_poll_status` intentionally does NOT return `output_code` or `link_output_code` — those fields only become available through `scrapeops_get_code` AFTER status is completed. So there's no way to "peek" at the code early.
+- If `finished` is false (`status` is `queued`, `pending`, `processing` or `running`) → loop and call `scrapeops_poll_status` again. Do NOT stop polling.
 - `completed_at: null` means the job has NOT finished. Keep polling.
 - On `status === "completed"` → THEN call **`scrapeops_get_code`** with the `version_id` to retrieve the final code. The tool returns `{ code, language, library, install_command, version_id }` — use that `code` field for the Write in the next step. Do NOT use any cached intermediate output.
-- On `"error"` / `"failed"` / `"wrong_page_type"` / `"cancelled"` / `"expired"` → show `error_message` and stop.
-- There is no max poll count and **no time-based stuck detection**. Jobs typically take 5–15 minutes each but can take longer when the backend runs validation loops, self-healing, or agent-based fixing. Do NOT infer that the job is stuck based on elapsed time, step label, or the presence of partially-generated code. Just keep polling until the status is literally one of the terminal values above.
+- On `outcome === "failed"` (any failure status: `failed`, `error`, `cancelled`, `expired`, `wrong_page_type`, `unsupported_schema`, `proxy_error`, `js_rendering_error`, `404_page`, `login_required`, `no_data_found`, ...) → show `status` and `error_message` and stop.
+- There is no max poll count and **no time-based stuck detection**. Jobs typically take 5–15 minutes each but can take longer when the backend runs validation loops, self-healing, or agent-based fixing. Do NOT infer that the job is stuck based on elapsed time, step label, or the presence of partially-generated code. Just keep polling until `finished` is true.
 - **Never open a "Stuck job" `AskUserQuestion`** offering options like "Proceed with existing code" / "Keep polling" / "Abort". Do not second-guess the backend. The only legitimate exit from the poll loop is a terminal status string. If you think the job is "stuck", you're wrong — keep polling.
 - If the user explicitly interrupts (Ctrl+C, or types something like "stop", "cancel", "abort") → only then stop. Otherwise keep polling silently.
 
@@ -908,7 +908,7 @@ Save as `README.md` using the **Write** tool.
 |-----------|----------|
 | `scrapeops_fetch_html` for discovery fails 3 times | Ask user to paste listing URL manually |
 | `scrapeops_submit_job` returns error | Show the full response body, stop |
-| `scrapeops_poll_status` returns `error`/`failed`/`wrong_page_type` | Show `error_message`, stop — don't attempt to "work around" by changing parameters |
+| `scrapeops_poll_status` returns `outcome: "failed"` | Show `status` + `error_message`, stop — don't attempt to "work around" by changing parameters |
 | Crawler local run fails | Show stderr, offer retry / skip / abort |
 | JSONL validation fails | Invoke local `parser-fixer` agent once (via Agent tool), then ask user if still broken |
 | Scraper smoke test fails | Invoke local `parser-fixer` agent once (via Agent tool) on scraper, then ask user if still broken |
