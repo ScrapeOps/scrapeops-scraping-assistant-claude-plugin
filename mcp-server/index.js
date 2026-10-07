@@ -169,6 +169,18 @@ async function getConcurrencyLimit() {
   return res;
 }
 
+// Generation job statuses that mean "still running". Every other status is final: either
+// "completed" or a failure (failed, error, cancelled, expired, wrong_page_type,
+// unsupported_schema, proxy_error, js_rendering_error, 404_page, login_required,
+// no_data_found, ...). New failure statuses are final automatically.
+const IN_PROGRESS_STATUSES = new Set(["queued", "pending", "processing", "running"]);
+
+function jobOutcome(status) {
+  if (status === "completed") return "completed";
+  if (!status || IN_PROGRESS_STATUSES.has(status)) return "in_progress";
+  return "failed";
+}
+
 async function pollStatus({ version_id }) {
   const api_key = getApiKey();
   const api_url = getApiUrl();
@@ -179,14 +191,20 @@ async function pollStatus({ version_id }) {
   );
   const status = d.status ?? "";
   const progress = d.last_progress_message || d.step || "";
+  const outcome = jobOutcome(status);
   // ALWAYS strip the code fields from polling responses — the backend populates
   // `output_code` / `link_output_code` mid-pipeline (before status = "completed"),
   // which tempts the caller to proceed with incomplete code. The caller must use
   // `scrapeops_get_code` AFTER status = "completed" to retrieve the final code.
   delete d.output_code;
   delete d.link_output_code;
+  const summary = outcome === "failed"
+    ? `FAILED (${status}): ${d.error_message || "job ended without code"} — stop polling and show this to the user`
+    : `Status: ${status} — ${progress}`;
   return {
-    _summary: `Status: ${status} — ${progress}`,
+    _summary: summary,
+    finished: outcome !== "in_progress",
+    outcome,
     status: d.status,
     step: d.step,
     last_progress_message: d.last_progress_message,
@@ -206,6 +224,13 @@ async function getCode({ version_id }) {
     `${api_url}/scraping-assistant/job/${version_id}/status`,
     { headers: { Api_key: api_key } }
   );
+  if (jobOutcome(d.status) === "failed") {
+    return {
+      _error: `Job ended with status "${d.status}" and has no code: ${d.error_message || "no error message"}. Show this to the user; do not poll again.`,
+      status: d.status,
+      step: d.step,
+    };
+  }
   if (d.status !== "completed") {
     return {
       _error: `Job status is "${d.status}", not "completed". Call scrapeops_poll_status until status is "completed" before calling scrapeops_get_code.`,
@@ -477,7 +502,7 @@ const TOOLS = [
   {
     name: "scrapeops_poll_status",
     description:
-      "Wait 30 seconds then check job status. Call repeatedly until status is 'completed' or 'error'. API key and URL are read from environment automatically. IMPORTANT: this tool intentionally STRIPS the generated code (output_code / link_output_code) from the response — the backend populates those fields before the pipeline is finished, which would otherwise tempt the caller to proceed with incomplete code. Use scrapeops_get_code AFTER status is 'completed' to retrieve the final code.",
+      "Wait 30 seconds then check job status. Call repeatedly while `finished` is false. When `finished` is true, `outcome` is 'completed' (call scrapeops_get_code) or 'failed' (show `error_message` to the user and stop; failure statuses include failed, error, cancelled, expired, wrong_page_type, unsupported_schema, proxy_error, js_rendering_error, 404_page, login_required, no_data_found, unsupported_url). API key and URL are read from environment automatically. IMPORTANT: this tool intentionally STRIPS the generated code (output_code / link_output_code) from the response — the backend populates those fields before the pipeline is finished, which would otherwise tempt the caller to proceed with incomplete code. Use scrapeops_get_code AFTER status is 'completed' to retrieve the final code.",
     inputSchema: {
       type: "object",
       properties: {
